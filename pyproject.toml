@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-screener"
+version = "0.1.0"
+description = "Screen for fundamentally strong stocks that crashed on earnings, with options-strategy ideas."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["yfinance>=0.2.40"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+stock-screener = "stock_screener.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["stock_screener*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

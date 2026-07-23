@@ -1,0 +1,6 @@
+# Runtime dependency for live market data (the 'screen' command).
+# The rest of the package + tests + the 'demo' command run without it.
+yfinance>=0.2.40
+
+# Dev / test
+pytest>=7.0
