@@ -6,11 +6,75 @@ scenarios so the whole pipeline can be exercised without touching the network.
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 from typing import List, Tuple
 
-from .data.models import Fundamentals, PriceBar
+from .data.models import Fundamentals, OptionChain, OptionContract, PriceBar
 from .data.provider import InMemoryProvider
+
+_RISK_FREE = 0.045
+
+
+def _norm_cdf(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _bs_price(kind: str, S: float, K: float, t: float, sigma: float) -> float:
+    """Black-Scholes price used only to synthesize realistic demo chains."""
+    if t <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return max(0.0, (S - K) if kind == "call" else (K - S))
+    d1 = (math.log(S / K) + (_RISK_FREE + 0.5 * sigma ** 2) * t) / (sigma * math.sqrt(t))
+    d2 = d1 - sigma * math.sqrt(t)
+    if kind == "call":
+        return S * _norm_cdf(d1) - K * math.exp(-_RISK_FREE * t) * _norm_cdf(d2)
+    return K * math.exp(-_RISK_FREE * t) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
+
+
+def _smile_iv(base_iv: float, strike: float, spot: float) -> float:
+    """A simple downside-skewed volatility smile."""
+    moneyness = strike / spot
+    return round(base_iv + 0.15 * (1 - moneyness) + 0.05 * abs(1 - moneyness), 4)
+
+
+def build_demo_chain(
+    ticker: str, expiry: date, spot: float, base_iv: float, today: date
+) -> OptionChain:
+    """Synthesize a plausible option chain around ``spot`` for offline demos."""
+    t = max((expiry - today).days, 1) / 365.0
+    step = 5.0 if spot >= 100 else 2.5
+    lo = math.floor(spot * 0.75 / step) * step
+    hi = math.ceil(spot * 1.25 / step) * step
+    calls: List[OptionContract] = []
+    puts: List[OptionContract] = []
+    k = lo
+    while k <= hi + 1e-9:
+        iv = _smile_iv(base_iv, k, spot)
+        for kind, bucket in (("call", calls), ("put", puts)):
+            mid = round(max(0.01, _bs_price(kind, spot, k, t, iv)), 2)
+            spread = max(0.05, round(0.02 * mid, 2))
+            bid = round(max(0.0, mid - spread / 2), 2)
+            ask = round(mid + spread / 2, 2)
+            itm = (k < spot) if kind == "call" else (k > spot)
+            bucket.append(
+                OptionContract(
+                    contract_symbol=f"{ticker}{expiry:%y%m%d}{kind[0].upper()}{int(k*1000):08d}",
+                    option_type=kind,
+                    strike=round(k, 2),
+                    expiry=expiry,
+                    bid=bid,
+                    ask=ask,
+                    last=mid,
+                    implied_volatility=iv,
+                    volume=500,
+                    open_interest=1500,
+                    in_the_money=itm,
+                )
+            )
+        k += step
+    return OptionChain(
+        ticker=ticker, expiry=expiry, underlying_price=spot, calls=calls, puts=puts
+    )
 
 
 def _flat_then_crash(
@@ -40,13 +104,16 @@ def _flat_then_crash(
             steps_after = (day - earnings_date).days
             target = base_price * (1 + recovery_pct)
             price = trough + (target - trough) * min(1.0, steps_after / 8.0)
+        # A small deterministic wobble so realized volatility varies day to day
+        # (a pure flat line has zero vol and makes IV rank meaningless).
+        close = price * (1 + 0.012 * math.sin(i * 1.7))
         bars.append(
             PriceBar(
                 day=day,
-                open=price,
-                high=price * 1.01,
-                low=price * 0.99,
-                close=round(price, 2),
+                open=round(close, 2),
+                high=round(close * 1.01, 2),
+                low=round(close * 0.99, 2),
+                close=round(close, 2),
                 volume=1_000_000,
             )
         )
@@ -115,6 +182,16 @@ def build_demo_provider() -> Tuple[InMemoryProvider, List[str], date]:
         drop_pct=-0.13, recovery_pct=-0.09,
     )
     provider.add(solid, solid_bars, solid_earn)
+
+    # Synthetic option chains for the two names that pass the screen, so the
+    # `--options` path (IV rank + priced strategies) works fully offline.
+    near_expiry = today + timedelta(days=34)    # ~35 DTE
+    leaps_expiry = today + timedelta(days=202)   # ~7 months
+    for tkr, spot, base_iv in (("GOODCO", 90.0, 0.45), ("SOLIDCO", 145.6, 0.40)):
+        provider.add_option_chain(build_demo_chain(tkr, near_expiry, spot, base_iv, today))
+        provider.add_option_chain(
+            build_demo_chain(tkr, leaps_expiry, spot, base_iv - 0.08, today)
+        )
 
     tickers = ["GOODCO", "WEAKCO", "STEADYCO", "SOLIDCO"]
     return provider, tickers, today

@@ -88,7 +88,7 @@ def _cmd_screen(args: argparse.Namespace) -> int:
         print(f"Scanning {len(tickers)} tickers...\n", file=sys.stderr)
 
     screener = Screener(provider, cfg)
-    candidates = screener.screen(tickers)
+    candidates = screener.screen(tickers, include_options=args.options)
     if args.limit:
         candidates = candidates[: args.limit]
 
@@ -105,7 +105,7 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     provider, tickers, today = build_demo_provider()
     cfg = _config_from_args(args)
     screener = Screener(provider, cfg)
-    candidates = screener.screen(tickers, today=today)
+    candidates = screener.screen(tickers, today=today, include_options=args.options)
     if args.limit:
         candidates = candidates[: args.limit]
 
@@ -136,6 +136,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Only earnings within this many days.")
         p.add_argument("--include-recovered", action="store_true",
                        help="Also include names that already bounced above pre-earnings.")
+        p.add_argument("--options", action="store_true",
+                       help="Fetch live option chains: IV rank + priced strategies "
+                            "(slower — one extra request per candidate).")
         p.add_argument("--detail", action="store_true",
                        help="Print full per-candidate detail.")
         p.add_argument("--json", action="store_true", help="Emit JSON.")

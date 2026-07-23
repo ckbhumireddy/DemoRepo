@@ -36,6 +36,29 @@ def test_candidates_have_option_suggestions():
         assert "Bull put credit spread" in strategies
 
 
+def test_options_enrichment_populates_iv_and_strategies():
+    provider, tickers, today = build_demo_provider()
+    results = Screener(provider).screen(tickers, today=today, include_options=True)
+    assert results
+    for c in results:
+        assert c.iv_rank is not None
+        assert 0.0 <= c.iv_rank.iv_rank <= 1.0
+        assert c.priced_strategies
+        names = {s.strategy for s in c.priced_strategies}
+        assert "Cash-secured put" in names
+        assert "Long LEAPS call" in names
+        # Every priced strategy has a defined (finite) max loss.
+        assert all(s.max_loss is not None for s in c.priced_strategies)
+
+
+def test_options_enrichment_is_opt_in():
+    provider, tickers, today = build_demo_provider()
+    results = Screener(provider).screen(tickers, today=today)  # no include_options
+    assert results
+    assert all(c.iv_rank is None for c in results)
+    assert all(not c.priced_strategies for c in results)
+
+
 def test_relaxing_score_threshold_admits_more():
     provider, tickers, today = build_demo_provider()
     strict = Screener(provider, ScreenConfig(min_fundamental_score=90))

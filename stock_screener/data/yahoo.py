@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
-from .models import Fundamentals, PriceBar
+from .models import Fundamentals, OptionChain, OptionContract, PriceBar
 from .provider import MarketDataProvider
 
 
@@ -130,6 +130,78 @@ class YahooProvider(MarketDataProvider):
                 if d <= today:
                     return d
         return None
+
+    # ---- Options ------------------------------------------------------------
+    def supports_options(self) -> bool:
+        return True
+
+    def get_option_expiries(self, ticker: str) -> List[date]:
+        try:
+            raw = self._ticker(ticker).options or ()
+        except Exception:  # pragma: no cover - network dependent
+            return []
+        out: List[date] = []
+        for s in raw:
+            try:
+                out.append(datetime.strptime(s, "%Y-%m-%d").date())
+            except (TypeError, ValueError):
+                continue
+        return sorted(out)
+
+    def _underlying_price(self, ticker: str) -> Optional[float]:
+        tk = self._ticker(ticker)
+        try:
+            fast = getattr(tk, "fast_info", None)
+            if fast is not None:
+                px = _to_float(getattr(fast, "last_price", None))
+                if px:
+                    return px
+        except Exception:  # pragma: no cover - network dependent
+            pass
+        bars = self.get_price_history(ticker, days=5)
+        return bars[-1].close if bars else None
+
+    def get_option_chain(self, ticker: str, expiry: date) -> Optional[OptionChain]:
+        tk = self._ticker(ticker)
+        try:
+            raw = tk.option_chain(expiry.isoformat())
+        except Exception:  # pragma: no cover - network dependent
+            return None
+        underlying = self._underlying_price(ticker) or 0.0
+
+        def _rows(frame, option_type: str) -> List[OptionContract]:
+            contracts: List[OptionContract] = []
+            if frame is None:
+                return contracts
+            for _, row in frame.iterrows():
+                strike = _to_float(row.get("strike"))
+                if strike is None:
+                    continue
+                itm = row.get("inTheMoney")
+                contracts.append(
+                    OptionContract(
+                        contract_symbol=str(row.get("contractSymbol", "")),
+                        option_type=option_type,
+                        strike=strike,
+                        expiry=expiry,
+                        bid=_to_float(row.get("bid")),
+                        ask=_to_float(row.get("ask")),
+                        last=_to_float(row.get("lastPrice")),
+                        implied_volatility=_to_float(row.get("impliedVolatility")),
+                        volume=_to_float(row.get("volume")),
+                        open_interest=_to_float(row.get("openInterest")),
+                        in_the_money=bool(itm) if itm is not None else None,
+                    )
+                )
+            return contracts
+
+        return OptionChain(
+            ticker=ticker.upper(),
+            expiry=expiry,
+            underlying_price=underlying,
+            calls=_rows(getattr(raw, "calls", None), "call"),
+            puts=_rows(getattr(raw, "puts", None), "put"),
+        )
 
 
 def _normalize_de(value: Optional[float]) -> Optional[float]:

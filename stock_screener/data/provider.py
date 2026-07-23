@@ -12,11 +12,16 @@ from abc import ABC, abstractmethod
 from datetime import date
 from typing import Dict, List, Optional, Tuple
 
-from .models import Fundamentals, PriceBar
+from .models import Fundamentals, OptionChain, OptionContract, PriceBar  # noqa: F401
 
 
 class MarketDataProvider(ABC):
-    """Abstract source of fundamentals, prices, and earnings dates."""
+    """Abstract source of fundamentals, prices, earnings dates, and options.
+
+    Option-chain access is optional: providers that can't supply it inherit the
+    default no-op implementations below and the screener simply skips options
+    enrichment for them.
+    """
 
     @abstractmethod
     def get_fundamentals(self, ticker: str) -> Optional[Fundamentals]:
@@ -29,6 +34,16 @@ class MarketDataProvider(ABC):
     @abstractmethod
     def get_last_earnings_date(self, ticker: str) -> Optional[date]:
         ...
+
+    # ---- Optional options-chain support ------------------------------------
+    def supports_options(self) -> bool:
+        return False
+
+    def get_option_expiries(self, ticker: str) -> List[date]:
+        return []
+
+    def get_option_chain(self, ticker: str, expiry: date) -> Optional[OptionChain]:
+        return None
 
 
 class InMemoryProvider(MarketDataProvider):
@@ -47,6 +62,8 @@ class InMemoryProvider(MarketDataProvider):
         self._fundamentals = fundamentals or {}
         self._prices = prices or {}
         self._earnings = earnings or {}
+        self._chains: Dict[Tuple[str, str], OptionChain] = {}
+        self._expiries: Dict[str, List[date]] = {}
 
     def add(
         self,
@@ -60,6 +77,14 @@ class InMemoryProvider(MarketDataProvider):
         if earnings_date is not None:
             self._earnings[t] = earnings_date
 
+    def add_option_chain(self, chain: OptionChain) -> None:
+        t = chain.ticker
+        self._chains[(t, chain.expiry.isoformat())] = chain
+        self._expiries.setdefault(t, [])
+        if chain.expiry not in self._expiries[t]:
+            self._expiries[t].append(chain.expiry)
+            self._expiries[t].sort()
+
     def get_fundamentals(self, ticker: str) -> Optional[Fundamentals]:
         return self._fundamentals.get(ticker)
 
@@ -68,3 +93,12 @@ class InMemoryProvider(MarketDataProvider):
 
     def get_last_earnings_date(self, ticker: str) -> Optional[date]:
         return self._earnings.get(ticker)
+
+    def supports_options(self) -> bool:
+        return bool(self._chains)
+
+    def get_option_expiries(self, ticker: str) -> List[date]:
+        return list(self._expiries.get(ticker, []))
+
+    def get_option_chain(self, ticker: str, expiry: date) -> Optional[OptionChain]:
+        return self._chains.get((ticker, expiry.isoformat()))

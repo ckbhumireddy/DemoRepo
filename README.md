@@ -23,10 +23,12 @@ The strategy targets a specific, well-known setup:
 3. **Options to trade the rebound** — because post-earnings implied volatility
    is usually elevated then collapses ("IV crush"), the tool leans toward
    **defined-risk, premium-selling** strategies alongside longer-dated bullish
-   plays.
+   plays. With `--options` it pulls **live option chains**, gauges **IV rank**,
+   and prices concrete strategies (real strikes, mid prices, max profit/loss,
+   breakeven).
 
-Each stock gets a **quality score (0–100)**, a measured **crash depth**, and a
-blended **composite score** used for ranking.
+Each stock gets a **quality score (0–100)**, a measured **crash depth**, an
+optional **IV rank**, and a blended **composite score** used for ranking.
 
 ## Install
 
@@ -43,16 +45,24 @@ third-party data.
 
 ## Usage
 
-Try it instantly with built-in synthetic data — no network needed:
+Try it instantly with built-in synthetic data — no network needed (the demo
+also ships synthetic option chains, so `--options` works offline):
 
 ```bash
 python -m stock_screener.cli demo --detail
+python -m stock_screener.cli demo --options --detail   # IV rank + priced strategies
 ```
 
 Scan the default large-cap watchlist with live data:
 
 ```bash
 python -m stock_screener.cli screen
+```
+
+Add live options-chain pricing and IV rank (one extra request per candidate):
+
+```bash
+python -m stock_screener.cli screen --options --detail
 ```
 
 Scan specific tickers with full detail:
@@ -84,6 +94,7 @@ python -m stock_screener.cli screen --tickers-file my_watchlist.txt
 | `--min-score 60` | Minimum fundamental quality score (0–100) |
 | `--lookback 45` | Only count earnings within this many days |
 | `--include-recovered` | Also show names that already bounced back |
+| `--options` | Fetch live chains: IV rank + priced strategies (slower) |
 | `--detail` | Full per-candidate breakdown + options ideas |
 | `--json` | Machine-readable JSON output |
 | `--limit N` | Cap the number of results |
@@ -100,7 +111,9 @@ stock_screener/
 ├── analysis/
 │   ├── fundamentals.py    # weighted quality scoring rubric
 │   ├── earnings.py        # post-earnings crash detection
-│   ├── options.py         # educational options-strategy suggestions
+│   ├── options.py         # educational options-strategy templates
+│   ├── volatility.py      # realized vol + IV rank
+│   ├── chain_pricing.py   # priced strategies from a live option chain
 │   └── screener.py        # ties it together, ranks candidates
 ├── universe.py            # default ticker watchlist
 ├── report.py              # table / detail / JSON rendering
@@ -129,19 +142,40 @@ after, and where the stock sits now versus before the report. A qualifying
 crash exceeds `min_crash_pct`, happened within `crash_lookback_days`, and (by
 default) is still below its pre-earnings price.
 
+### Live options & IV rank (`--options`)
+
+When enabled, for each surviving candidate the screener:
+
+- picks a **near-dated expiry** (~30–45 DTE) for premium-selling / defined-risk
+  plays and a **long-dated expiry** (~6–12 months) for a LEAPS call;
+- prices concrete strategies from the live chain — **cash-secured put**,
+  **bull put credit spread**, **bull call debit spread** (top-quality names),
+  and a **long LEAPS call** — each with real strikes, mid prices, net
+  credit/debit, max profit, max loss, and breakeven (all per share);
+- computes an **IV rank / percentile** from the chain's ATM implied volatility.
+
+> **A note on IV rank.** Textbook IV rank compares current IV to its own trailing
+> 52-week range, which requires a history of *implied* volatility that free feeds
+> don't expose. This tool approximates it by ranking current IV against the
+> trailing range of *realized* volatility. It's a labelled proxy
+> (`IVRank.method` says so) — a useful gauge of whether premium is rich or cheap,
+> not an exact match to a broker's IV-rank figure. A dedicated options-data
+> provider with historical IV would make it exact.
+
 ## Running the tests
 
 ```bash
 python -m pytest
 ```
 
-The suite (16 tests) covers fundamentals scoring, crash detection, options
-suggestions, and the end-to-end screener — all offline.
+The suite (30 tests) covers fundamentals scoring, crash detection, options
+suggestions, volatility / IV rank, live-chain strategy pricing, and the
+end-to-end screener — all offline.
 
 ## Roadmap ideas
 
-- Real options-chain pricing & implied-volatility rank (needs a data source
-  with an options feed)
+- Option greeks (delta/theta/vega) and probability-of-profit on each strategy
+- Exact IV rank via a provider that exposes historical implied volatility
 - Paper-trading integration (e.g. Alpaca) to track hypothetical P&L
 - A web dashboard (Streamlit or FastAPI)
 - Backtesting the "quality + earnings crash" edge over history
