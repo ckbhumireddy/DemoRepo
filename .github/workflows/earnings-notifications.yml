@@ -1,0 +1,51 @@
+name: S&P 500 earnings notifications
+
+# Runs every weekday morning and emails a digest of S&P 500 companies
+# reporting earnings ~1 week out. Also runnable on demand from the Actions tab
+# (optionally as a dry run that prints instead of sending).
+
+on:
+  schedule:
+    # 13:00 UTC ~= 09:00 US Eastern (before the market opens). Cron in UTC.
+    - cron: "0 13 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only (do not send email)"
+        type: boolean
+        default: false
+      ticker_limit:
+        description: "Limit number of tickers (0 = all)"
+        default: "0"
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Send earnings digest
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          LEAD_DAYS: ${{ vars.LEAD_DAYS }}
+          WINDOW_DAYS: ${{ vars.WINDOW_DAYS }}
+          TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
+        run: |
+          python -m earnings_notifier \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
