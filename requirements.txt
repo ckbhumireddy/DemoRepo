@@ -1,0 +1,5 @@
+# Runtime dependencies for the S&P 500 earnings notifier.
+yfinance>=0.2.40
+pandas>=2.0.0
+lxml>=4.9.0        # required by pandas.read_html for the Wikipedia constituents table
+requests>=2.31.0
