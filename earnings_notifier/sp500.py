@@ -33,10 +33,24 @@ def normalize_ticker(symbol: str) -> str:
     return symbol.strip().upper().replace(".", "-")
 
 
-def _fetch_from_wikipedia() -> List[str]:
-    import pandas as pd  # imported lazily so tests don't require pandas
+def _fetch_from_wikipedia(timeout: int = 20) -> List[str]:
+    import io
 
-    tables = pd.read_html(WIKI_URL)
+    import pandas as pd  # imported lazily so tests don't require pandas
+    import requests
+
+    # Wikipedia returns 403 to the default urllib user-agent that pandas uses,
+    # so fetch the HTML ourselves with a browser-like UA and parse the text.
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (compatible; sp500-earnings-notifier/1.0; "
+            "+https://github.com/)"
+        )
+    }
+    resp = requests.get(WIKI_URL, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+
+    tables = pd.read_html(io.StringIO(resp.text))
     # The first table on the page is the constituents list with a "Symbol"
     # column. Guard against layout changes by searching for the column.
     for table in tables:

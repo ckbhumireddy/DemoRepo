@@ -2,6 +2,7 @@ import datetime as dt
 
 from earnings_notifier.earnings import (
     EarningsEvent,
+    YFinanceProvider,
     collect_upcoming,
     select_for_notification,
 )
@@ -65,3 +66,32 @@ def test_collect_upcoming_tolerates_failures():
 
 def test_collect_upcoming_empty_tickers():
     assert collect_upcoming([], _FlakyProvider()) == []
+
+
+def test_provider_retries_transient_failure():
+    provider = YFinanceProvider(attempts=3, backoff=0)
+    calls = {"n": 0}
+
+    def fake_lookup(ticker):
+        calls["n"] += 1
+        if calls["n"] < 2:  # fail once (simulated rate-limit 404), then succeed
+            raise RuntimeError("rate limited")
+        return _ev(ticker, 7)
+
+    provider._lookup_once = fake_lookup
+    event = provider.next_earnings_date("BK")
+    assert event is not None and event.ticker == "BK"
+    assert calls["n"] == 2
+
+
+def test_provider_gives_up_after_attempts():
+    provider = YFinanceProvider(attempts=2, backoff=0)
+    calls = {"n": 0}
+
+    def always_none(ticker):
+        calls["n"] += 1
+        return None
+
+    provider._lookup_once = always_none
+    assert provider.next_earnings_date("PXD") is None
+    assert calls["n"] == 2  # retried up to the attempt limit

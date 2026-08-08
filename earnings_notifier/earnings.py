@@ -104,15 +104,43 @@ def collect_upcoming(
 # yfinance-backed provider
 # --------------------------------------------------------------------------- #
 class YFinanceProvider:
-    """Fetches upcoming earnings dates from Yahoo Finance via ``yfinance``."""
+    """Fetches upcoming earnings dates from Yahoo Finance via ``yfinance``.
 
-    def __init__(self, today: Optional[dt.date] = None) -> None:
+    Yahoo intermittently returns 404s for perfectly valid symbols when it is
+    rate limiting, so each lookup is retried a couple of times with a short
+    backoff before giving up.
+    """
+
+    def __init__(
+        self,
+        today: Optional[dt.date] = None,
+        attempts: int = 2,
+        backoff: float = 0.75,
+    ) -> None:
         self._today = today  # overridable for testing; None -> use dt.date.today()
+        self.attempts = max(1, attempts)
+        self.backoff = backoff
 
     def _now(self) -> dt.date:
         return self._today or dt.date.today()
 
     def next_earnings_date(self, ticker: str) -> Optional[EarningsEvent]:
+        import time
+
+        for attempt in range(self.attempts):
+            try:
+                result = self._lookup_once(ticker)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("lookup error for %s (attempt %d): %s",
+                             ticker, attempt + 1, exc)
+                result = None
+            if result is not None:
+                return result
+            if attempt < self.attempts - 1 and self.backoff:
+                time.sleep(self.backoff * (attempt + 1))
+        return None
+
+    def _lookup_once(self, ticker: str) -> Optional[EarningsEvent]:
         import pandas as pd  # noqa: F401  (yfinance returns pandas objects)
         import yfinance as yf
 
