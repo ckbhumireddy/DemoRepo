@@ -49,3 +49,17 @@ def test_service_run_end_to_end_dry_run():
     assert result.resolved == 2
     assert [e.ticker for e in result.selected] == ["AAPL"]
     assert result.notified is False
+
+
+def test_service_appends_watchlist_tickers():
+    provider = _StaticProvider(
+        {
+            "AAPL": EarningsEvent("AAPL", TODAY + dt.timedelta(days=7), True),
+            "NBIS": EarningsEvent("NBIS", TODAY + dt.timedelta(days=7), True),
+        }
+    )
+    cfg = Config(dry_run=True, extra_tickers=["nbis", "AAPL"])  # dup + lowercase
+    result = run(cfg, today=TODAY, provider=provider, tickers=["AAPL"])
+    # NBIS added once (deduped against the existing AAPL), both selected.
+    assert result.total_tickers == 2
+    assert {e.ticker for e in result.selected} == {"AAPL", "NBIS"}

@@ -65,6 +65,7 @@ class Config:
     max_workers: int = 8          # concurrent yfinance lookups
     request_timeout: int = 20     # per-ticker timeout hint (seconds)
     ticker_limit: int = 0         # 0 = all constituents; >0 caps for testing
+    extra_tickers: List[str] = field(default_factory=list)  # watchlist beyond S&P 500
 
     # --- Behaviour ---
     dry_run: bool = False         # render + print instead of sending email
@@ -80,6 +81,7 @@ class Config:
             smtp_use_ssl=_get_bool("SMTP_USE_SSL", False),
             email_from=os.environ.get("EMAIL_FROM", "").strip(),
             email_to=_get_list("EMAIL_TO"),
+            extra_tickers=_get_list("EXTRA_TICKERS"),
             lead_days=_get_int("LEAD_DAYS", 7),
             window_days=_get_int("WINDOW_DAYS", 0),
             max_workers=_get_int("MAX_WORKERS", 8),

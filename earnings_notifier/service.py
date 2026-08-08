@@ -18,7 +18,7 @@ from .earnings import (
 )
 from .formatting import render_email
 from .notifier import EmailNotifier
-from .sp500 import get_sp500_tickers
+from .sp500 import get_sp500_tickers, normalize_ticker
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,18 @@ def run(
     if config.ticker_limit and config.ticker_limit > 0:
         tickers = tickers[: config.ticker_limit]
         logger.info("Limiting to first %d tickers", config.ticker_limit)
+
+    # Append any watchlist tickers (e.g. names outside the S&P 500), deduped.
+    if config.extra_tickers:
+        seen = set(tickers)
+        added = []
+        for raw in config.extra_tickers:
+            t = normalize_ticker(raw)
+            if t not in seen:
+                seen.add(t)
+                added.append(t)
+        tickers = list(tickers) + added
+        logger.info("Added %d watchlist ticker(s): %s", len(added), ", ".join(added))
 
     if provider is None:
         provider = YFinanceProvider(today=today)
