@@ -56,6 +56,7 @@ python -m earnings_notifier --env-file .env
 | `--window-days N` | ± tolerance around lead days (default 0) |
 | `--limit N` | Only look up the first N tickers (testing) |
 | `--tickers A,B,C` | Use these tickers instead of the S&P 500 list |
+| `--extra-tickers A,B` | Add these tickers on top of the S&P 500 (watchlist) |
 | `--env-file PATH` | Load env vars from a file first |
 | `-v` | Debug logging |
 
@@ -80,7 +81,11 @@ Configure these in **Settings → Secrets and variables → Actions**:
 | `SMTP_USE_TLS` | `true` (STARTTLS/587) |
 | `SMTP_USE_SSL` | `false` (set `true` + port `465` for implicit TLS) |
 
-**Variables** (optional): `LEAD_DAYS`, `WINDOW_DAYS`.
+**Variables** (optional): `LEAD_DAYS`, `WINDOW_DAYS`, `EXTRA_TICKERS`.
+
+To track names **outside** the S&P 500 (e.g. `NBIS`), set the `EXTRA_TICKERS`
+Actions variable to a comma-separated list — they're appended to the roster and
+notified on the same one-week-ahead rule.
 
 > **Gmail note:** use an App Password with 2-Step Verification enabled — your
 > normal password will not work for SMTP. SendGrid, Mailgun, Amazon SES, etc.

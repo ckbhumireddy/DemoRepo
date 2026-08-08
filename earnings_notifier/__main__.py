@@ -58,6 +58,8 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="only look up the first N tickers (testing)")
     p.add_argument("--tickers", type=str, default=None,
                    help="comma-separated tickers to use instead of the S&P 500 list")
+    p.add_argument("--extra-tickers", type=str, default=None,
+                   help="comma-separated tickers to ADD to the S&P 500 list (watchlist)")
     p.add_argument("--env-file", type=str, default=None,
                    help="load environment variables from this file first")
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
@@ -104,6 +106,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         config.window_days = args.window_days
     if args.limit is not None:
         config.ticker_limit = args.limit
+    if args.extra_tickers:
+        config.extra_tickers = [
+            t.strip() for t in args.extra_tickers.split(",") if t.strip()
+        ]
 
     today = dt.date.today()
     provider = None

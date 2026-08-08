@@ -45,6 +45,7 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           LEAD_DAYS: ${{ vars.LEAD_DAYS }}
           WINDOW_DAYS: ${{ vars.WINDOW_DAYS }}
+          EXTRA_TICKERS: ${{ vars.EXTRA_TICKERS }}
           TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
         run: |
           python -m earnings_notifier \
