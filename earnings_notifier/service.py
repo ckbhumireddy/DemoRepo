@@ -14,6 +14,7 @@ from .earnings import (
     EarningsProvider,
     YFinanceProvider,
     collect_upcoming,
+    enrich_events,
     select_for_notification,
 )
 from .formatting import render_email
@@ -97,6 +98,11 @@ def run(
     suppressed = len(in_window) - len(new_events)
     if suppressed:
         logger.info("Suppressed %d already-notified event(s)", suppressed)
+
+    # Add company name, price, 52-week range, market cap, and last-earnings
+    # results — only for the few events actually going into the email.
+    if new_events:
+        new_events = enrich_events(new_events, provider, max_workers=config.max_workers)
 
     subject, text_body, html_body = render_email(new_events, today, config.lead_days)
 

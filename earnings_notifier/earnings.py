@@ -17,12 +17,25 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class EarningsEvent:
-    """A single upcoming earnings announcement."""
+    """A single upcoming earnings announcement.
+
+    Everything beyond ``ticker``/``date``/``is_estimate`` is optional detail
+    used to enrich the email digest; ``None`` means "not available".
+    """
 
     ticker: str
     date: dt.date
     is_estimate: bool = True   # future dates are estimates until confirmed
     company: Optional[str] = None
+    price: Optional[float] = None
+    fifty_two_week_low: Optional[float] = None
+    fifty_two_week_high: Optional[float] = None
+    market_cap: Optional[float] = None
+    last_earnings_date: Optional[dt.date] = None
+    last_eps_estimate: Optional[float] = None
+    last_eps_actual: Optional[float] = None
+    last_surprise_pct: Optional[float] = None
+    last_reaction_pct: Optional[float] = None  # price move across the report
 
     def days_until(self, today: dt.date) -> int:
         return (self.date - today).days
@@ -99,6 +112,34 @@ def collect_upcoming(
     return events
 
 
+def enrich_events(
+    events: Iterable[EarningsEvent],
+    provider,
+    max_workers: int = 8,
+) -> List[EarningsEvent]:
+    """Fill in company/price/valuation details on the events being emailed.
+
+    Only called for the handful of events that survive selection, so the
+    per-ticker quote lookups stay cheap overall. A provider without an
+    ``enrich`` method, or a failed lookup, leaves the event unchanged.
+    """
+    events = list(events)
+    enrich = getattr(provider, "enrich", None)
+    if not events or not callable(enrich):
+        return events
+
+    def _one(event: EarningsEvent) -> EarningsEvent:
+        try:
+            return enrich(event) or event
+        except Exception as exc:  # noqa: BLE001 - detail is optional, never fatal
+            logger.debug("enrichment failed for %s: %s", event.ticker, exc)
+            return event
+
+    workers = max(1, min(max_workers, len(events)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(_one, events))
+
+
 # --------------------------------------------------------------------------- #
 # yfinance-backed provider
 # --------------------------------------------------------------------------- #
@@ -152,7 +193,11 @@ class YFinanceProvider:
         except Exception:  # noqa: BLE001
             df = None
 
+        last = {}
         if df is not None and not df.empty:
+            # The same table carries past rows with reported results — capture
+            # the most recent one so the digest can say how last quarter went.
+            last = _last_reported_earnings(df, today)
             future_dates = []
             for idx in df.index:
                 d = _to_date(idx)
@@ -163,6 +208,7 @@ class YFinanceProvider:
                     ticker=ticker,
                     date=min(future_dates),
                     is_estimate=True,
+                    **last,
                 )
 
         # Fallback: the calendar dict exposes an "Earnings Date" field.
@@ -172,9 +218,81 @@ class YFinanceProvider:
             cal = None
         d = _calendar_earnings_date(cal, today)
         if d is not None:
-            return EarningsEvent(ticker=ticker, date=d, is_estimate=True)
+            return EarningsEvent(ticker=ticker, date=d, is_estimate=True, **last)
 
         return None
+
+    def enrich(self, event: EarningsEvent) -> EarningsEvent:
+        """Return a copy of *event* with company name and quote details filled in.
+
+        Uses the heavier ``Ticker.info`` scrape (one request), falling back to
+        ``fast_info`` for any numbers it lacks. Failures leave fields ``None``.
+        """
+        import dataclasses
+
+        import yfinance as yf
+
+        yticker = yf.Ticker(event.ticker)
+        try:
+            info = yticker.info or {}
+        except Exception:  # noqa: BLE001
+            info = {}
+
+        updates = {}
+        name = info.get("longName") or info.get("shortName")
+        if name:
+            updates["company"] = str(name)
+        for field, keys in (
+            ("price", ("currentPrice", "regularMarketPrice")),
+            ("fifty_two_week_low", ("fiftyTwoWeekLow",)),
+            ("fifty_two_week_high", ("fiftyTwoWeekHigh",)),
+            ("market_cap", ("marketCap",)),
+        ):
+            for key in keys:
+                value = _as_float(info.get(key))
+                if value is not None:
+                    updates[field] = value
+                    break
+
+        missing = [
+            (field, attr)
+            for field, attr in (
+                ("price", "last_price"),
+                ("fifty_two_week_low", "year_low"),
+                ("fifty_two_week_high", "year_high"),
+                ("market_cap", "market_cap"),
+            )
+            if field not in updates
+        ]
+        if missing:
+            try:
+                fast = yticker.fast_info
+            except Exception:  # noqa: BLE001
+                fast = None
+            for field, attr in missing:
+                try:
+                    value = _as_float(getattr(fast, attr, None))
+                except Exception:  # noqa: BLE001
+                    value = None
+                if value is not None:
+                    updates[field] = value
+
+        # How did the market react to the last report? Compare the last close
+        # before the earnings date with the first close after it.
+        if event.last_earnings_date is not None and event.last_reaction_pct is None:
+            try:
+                history = yticker.history(
+                    start=event.last_earnings_date - dt.timedelta(days=10),
+                    end=event.last_earnings_date + dt.timedelta(days=10),
+                    interval="1d",
+                )
+            except Exception:  # noqa: BLE001
+                history = None
+            reaction = _post_earnings_move(history, event.last_earnings_date)
+            if reaction is not None:
+                updates["last_reaction_pct"] = reaction
+
+        return dataclasses.replace(event, **updates) if updates else event
 
 
 def _to_date(value) -> Optional[dt.date]:
@@ -198,6 +316,67 @@ def _to_date(value) -> Optional[dt.date]:
         except Exception:  # noqa: BLE001
             return None
     return None
+
+
+def _as_float(value) -> Optional[float]:
+    """Coerce to float, treating None/NaN/garbage as "not available"."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if f != f else f  # NaN check
+
+
+def _last_reported_earnings(df, today: dt.date) -> dict:
+    """Pull the most recent past row with a reported EPS out of the
+    ``get_earnings_dates`` table, as ``EarningsEvent`` field values.
+
+    Returns an empty dict when no past row has results (e.g. a fresh IPO).
+    """
+    best_date = None
+    best_row = None
+    for idx, row in df.iterrows():
+        d = _to_date(idx)
+        if d is None or d >= today:
+            continue
+        if _as_float(row.get("Reported EPS")) is None:
+            continue
+        if best_date is None or d > best_date:
+            best_date, best_row = d, row
+    if best_row is None:
+        return {}
+    return {
+        "last_earnings_date": best_date,
+        "last_eps_estimate": _as_float(best_row.get("EPS Estimate")),
+        "last_eps_actual": _as_float(best_row.get("Reported EPS")),
+        "last_surprise_pct": _as_float(best_row.get("Surprise(%)")),
+    }
+
+
+def _post_earnings_move(history, earnings_date: dt.date) -> Optional[float]:
+    """Percent price change across an earnings report.
+
+    Compares the last close *before* the earnings date with the first close
+    *after* it, so the reaction is captured whether the company reported
+    before the open or after the close. ``history`` is a daily OHLC frame
+    from ``yfinance``; returns ``None`` when it doesn't bracket the date.
+    """
+    if history is None or getattr(history, "empty", True):
+        return None
+    closes = []
+    for idx, row in history.iterrows():
+        d = _to_date(idx)
+        c = _as_float(row.get("Close"))
+        if d is not None and c is not None:
+            closes.append((d, c))
+    closes.sort()
+    before = [c for d, c in closes if d < earnings_date]
+    after = [c for d, c in closes if d > earnings_date]
+    if not before or not after or before[-1] <= 0:
+        return None
+    return (after[0] - before[-1]) / before[-1] * 100
 
 
 def _calendar_earnings_date(cal, today: dt.date) -> Optional[dt.date]:
