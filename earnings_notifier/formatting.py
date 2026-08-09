@@ -141,7 +141,10 @@ def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
             + "</div>"
         )
 
-    rows = []
+    # One stacked card per company instead of a wide table: an 8-column table
+    # collapses into unreadable slivers on phone-width screens, while cards
+    # wrap gracefully at any width.
+    cards = []
     for e in events:
         days = e.days_until(today)
         flag = (
@@ -149,61 +152,54 @@ def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
             if e.is_estimate
             else "<span style='color:#1a7f37'>confirmed</span>"
         )
-        company = (
-            f"<div style='color:#555;font-size:12px'>{html.escape(e.company)}</div>"
+        name = (
+            f" <span style='color:#555;font-weight:normal'>&middot; "
+            f"{html.escape(e.company)}</span>"
             if e.company
             else ""
         )
+        title = (
+            f"<div style='font-size:15px'>"
+            f"<a href='{html.escape(_quote_url(e.ticker))}' "
+            f"style='color:#0b57d0;text-decoration:none'>"
+            f"<b>{html.escape(e.ticker)}</b></a>{name}</div>"
+        )
+        when = (
+            f"<div style='margin-top:2px'>Reports <b>{html.escape(_weekday(e.date))}</b>"
+            f" &middot; in {days} day(s) &middot; {flag}</div>"
+        )
+        stats = (
+            f"<div style='margin-top:6px'>"
+            f"Price <b>{html.escape(_fmt_price(e.price))}</b>"
+            f" &nbsp;&middot;&nbsp; 52wk "
+            f"{html.escape(_fmt_range(e.fifty_two_week_low, e.fifty_two_week_high))}"
+            f" &nbsp;&middot;&nbsp; Mkt cap "
+            f"<b>{html.escape(_fmt_market_cap(e.market_cap))}</b></div>"
+        )
         last = _last_earnings_text(e)
+        last_html = ""
         if last:
             surprise = _surprise_pct(e)
             color = "#555" if surprise is None else ("#1a7f37" if surprise >= 0 else "#c62828")
-            # Strip the "Last earnings" prefix — the column header already says it.
-            last_cell = (
-                f"<span style='color:{color}'>"
-                + html.escape(last.removeprefix("Last earnings").lstrip())
-                + "</span>"
+            last_html = (
+                f"<div style='margin-top:6px'>"
+                f"<span style='color:{color}'>{html.escape(last)}</span>"
             )
             reaction = _reaction_text(e.last_reaction_pct)
             if reaction:
                 rcolor = "#1a7f37" if e.last_reaction_pct >= 0 else "#c62828"
-                last_cell += (
-                    f"<div style='color:{rcolor};font-size:12px'>{html.escape(reaction)}</div>"
+                last_html += (
+                    f" &middot; <span style='color:{rcolor}'>{html.escape(reaction)}</span>"
                 )
-        else:
-            last_cell = "—"
-        rows.append(
-            "<tr>"
-            f"<td style='padding:6px 12px'>"
-            f"<a href='{html.escape(_quote_url(e.ticker))}' "
-            f"style='color:#0b57d0;text-decoration:none'>"
-            f"<b>{html.escape(e.ticker)}</b></a>{company}</td>"
-            f"<td style='padding:6px 12px;white-space:nowrap'>{html.escape(_weekday(e.date))}</td>"
-            f"<td style='padding:6px 12px;text-align:right'>{days}</td>"
-            f"<td style='padding:6px 12px'>{flag}</td>"
-            f"<td style='padding:6px 12px;text-align:right'>{html.escape(_fmt_price(e.price))}</td>"
-            f"<td style='padding:6px 12px;white-space:nowrap'>"
-            f"{html.escape(_fmt_range(e.fifty_two_week_low, e.fifty_two_week_high))}</td>"
-            f"<td style='padding:6px 12px;text-align:right'>{html.escape(_fmt_market_cap(e.market_cap))}</td>"
-            f"<td style='padding:6px 12px'>{last_cell}</td>"
-            "</tr>"
+            last_html += "</div>"
+        cards.append(
+            "<div style='border:1px solid #d0d0d0;border-radius:8px;"
+            "padding:10px 14px;margin:0 0 10px'>"
+            + title + when + stats + last_html
+            + "</div>"
         )
 
-    table = (
-        "<table style='border-collapse:collapse;font-size:14px'>"
-        "<thead><tr style='background:#f2f2f2;text-align:left'>"
-        "<th style='padding:6px 12px'>Company</th>"
-        "<th style='padding:6px 12px'>Earnings date</th>"
-        "<th style='padding:6px 12px;text-align:right'>Days</th>"
-        "<th style='padding:6px 12px'>Status</th>"
-        "<th style='padding:6px 12px;text-align:right'>Price</th>"
-        "<th style='padding:6px 12px'>52-week range</th>"
-        "<th style='padding:6px 12px;text-align:right'>Mkt cap</th>"
-        "<th style='padding:6px 12px'>Last earnings</th>"
-        "</tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table>"
-    )
+    table = "".join(cards)
 
     footer = (
         "<p style='margin-top:16px;color:#777;font-size:12px'>"
@@ -211,7 +207,8 @@ def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
         "Finance and may shift; verify before trading.</p>"
     )
     return (
-        "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#222\">"
+        "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#222;"
+        "font-size:14px;max-width:640px\">"
         + header
         + table
         + footer
