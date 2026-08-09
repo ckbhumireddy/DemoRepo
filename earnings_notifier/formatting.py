@@ -19,19 +19,19 @@ def _weekday(d: dt.date) -> str:
 def render_subject(events: List[EarningsEvent], today: dt.date, lead_days: int) -> str:
     n = len(events)
     if n == 0:
-        return f"S&P 500 earnings: none in ~{lead_days} days"
+        return f"S&P 500 earnings: nothing new within {lead_days} days"
     noun = "company" if n == 1 else "companies"
-    return f"S&P 500 earnings in ~{lead_days} days: {n} {noun}"
+    return f"S&P 500 earnings within {lead_days} days: {n} {noun}"
 
 
 def render_text(events: List[EarningsEvent], today: dt.date, lead_days: int) -> str:
     lines = [
-        f"S&P 500 earnings coming up in about {lead_days} day(s)",
+        f"S&P 500 earnings within the next {lead_days} day(s)",
         f"(generated {_weekday(today)})",
         "",
     ]
     if not events:
-        lines.append("No S&P 500 companies report earnings in the target window.")
+        lines.append("No new S&P 500 earnings within the window.")
         return "\n".join(lines)
 
     for e in events:
@@ -48,14 +48,14 @@ def render_text(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
 
 def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> str:
     header = (
-        f"<h2 style='margin:0 0 4px'>S&amp;P 500 earnings in ~{lead_days} day(s)</h2>"
+        f"<h2 style='margin:0 0 4px'>S&amp;P 500 earnings within {lead_days} day(s)</h2>"
         f"<p style='margin:0 0 16px;color:#555'>Generated {html.escape(_weekday(today))}</p>"
     )
     if not events:
         return (
             "<div style=\"font-family:Arial,Helvetica,sans-serif\">"
             + header
-            + "<p>No S&amp;P 500 companies report earnings in the target window.</p>"
+            + "<p>No new S&amp;P 500 earnings within the window.</p>"
             + "</div>"
         )
 

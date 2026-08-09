@@ -19,6 +19,7 @@ from .earnings import (
 from .formatting import render_email
 from .notifier import EmailNotifier
 from .sp500 import get_sp500_tickers, normalize_ticker
+from .state import event_key, load_state, save_state
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +28,15 @@ logger = logging.getLogger(__name__)
 class RunResult:
     total_tickers: int
     resolved: int
-    selected: List[EarningsEvent]
-    notified: bool
+    in_window: List[EarningsEvent]   # everything within the look-ahead window
+    new_events: List[EarningsEvent]  # window minus already-notified (what we email)
+    notified: bool                   # True if an email was actually sent
     subject: str
+
+    # Backwards-compatible alias: the events the digest was built from.
+    @property
+    def selected(self) -> List[EarningsEvent]:
+        return self.new_events
 
 
 def run(
@@ -72,22 +79,49 @@ def run(
     logger.info("Fetching earnings dates for %d tickers...", len(tickers))
     events = collect_upcoming(tickers, provider, max_workers=config.max_workers)
 
-    selected = select_for_notification(
-        events, today, lead_days=config.lead_days, window_days=config.window_days
+    in_window = select_for_notification(
+        events, today, lead_days=config.lead_days, min_days=config.min_days
     )
     logger.info(
-        "%d compan(ies) report earnings in the target window", len(selected)
+        "%d compan(ies) report earnings within the next %d day(s)",
+        len(in_window),
+        config.lead_days,
     )
 
-    subject, text_body, html_body = render_email(selected, today, config.lead_days)
+    # De-duplicate against what we've already emailed so each earnings goes out
+    # only once, even though it stays in the window for several days.
+    known: set = set()
+    if config.use_state:
+        known = load_state(config.state_file)
+    new_events = [e for e in in_window if event_key(e) not in known]
+    suppressed = len(in_window) - len(new_events)
+    if suppressed:
+        logger.info("Suppressed %d already-notified event(s)", suppressed)
 
-    notifier = EmailNotifier(config)
-    notifier.send(subject, text_body, html_body)
+    subject, text_body, html_body = render_email(new_events, today, config.lead_days)
+
+    # Skip the email entirely when nothing new is due (unless send_empty).
+    sent = False
+    if new_events or config.send_empty:
+        EmailNotifier(config).send(subject, text_body, html_body)
+        sent = not config.dry_run
+    else:
+        logger.info("Nothing new to report; no email sent")
+
+    # Record what we just notified — but never in dry-run (it would suppress
+    # the real email later) and only if state is enabled.
+    if config.use_state and not config.dry_run and new_events:
+        known.update(event_key(e) for e in new_events)
+        save_state(
+            config.state_file, known, today,
+            retention_days=config.state_retention_days,
+        )
 
     return RunResult(
         total_tickers=len(tickers),
         resolved=len(events),
-        selected=selected,
-        notified=not config.dry_run,
+        in_window=in_window,
+        new_events=new_events,
+        notified=sent,
         subject=subject,
     )

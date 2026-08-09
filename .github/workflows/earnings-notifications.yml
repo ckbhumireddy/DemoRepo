@@ -33,6 +33,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Persist the "already notified" state between runs so each earnings is
+      # emailed only once. A unique key per run always saves a fresh entry;
+      # restore-keys pulls the most recent previous state (rolling cache).
+      - name: Restore notification state
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: earnings-state-${{ github.run_id }}
+          restore-keys: |
+            earnings-state-
+
       - name: Send earnings digest
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -44,8 +55,9 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           LEAD_DAYS: ${{ vars.LEAD_DAYS }}
-          WINDOW_DAYS: ${{ vars.WINDOW_DAYS }}
+          MIN_DAYS: ${{ vars.MIN_DAYS }}
           EXTRA_TICKERS: ${{ vars.EXTRA_TICKERS }}
+          STATE_FILE: state/notified.json
           TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
         run: |
           python -m earnings_notifier \
