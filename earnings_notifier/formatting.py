@@ -8,8 +8,14 @@ from __future__ import annotations
 import datetime as dt
 import html
 from typing import List, Tuple
+from urllib.parse import quote
 
 from .earnings import EarningsEvent
+
+
+def _quote_url(ticker: str) -> str:
+    """Yahoo Finance quote page for a ticker (already Yahoo-normalized)."""
+    return f"https://finance.yahoo.com/quote/{quote(ticker)}"
 
 
 def _weekday(d: dt.date) -> str:
@@ -113,6 +119,7 @@ def render_text(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
             lines.append(f"    {last}; {reaction}")
         elif last:
             lines.append(f"    {last}")
+        lines.append(f"    {_quote_url(e.ticker)}")
         lines.append("")
 
     lines.append(f"{len(events)} company(ies) total.")
@@ -167,7 +174,10 @@ def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
             last_cell = "—"
         rows.append(
             "<tr>"
-            f"<td style='padding:6px 12px'><b>{html.escape(e.ticker)}</b>{company}</td>"
+            f"<td style='padding:6px 12px'>"
+            f"<a href='{html.escape(_quote_url(e.ticker))}' "
+            f"style='color:#0b57d0;text-decoration:none'>"
+            f"<b>{html.escape(e.ticker)}</b></a>{company}</td>"
             f"<td style='padding:6px 12px;white-space:nowrap'>{html.escape(_weekday(e.date))}</td>"
             f"<td style='padding:6px 12px;text-align:right'>{days}</td>"
             f"<td style='padding:6px 12px'>{flag}</td>"

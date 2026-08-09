@@ -134,6 +134,13 @@ def test_negative_reaction_colored_red_in_html():
     assert "#c62828" in html
 
 
+def test_ticker_links_to_yahoo_quote_page():
+    text = render_text(_events(), TODAY, 7)
+    html = render_html(_events(), TODAY, 7)
+    assert "https://finance.yahoo.com/quote/AAPL" in text
+    assert "<a href='https://finance.yahoo.com/quote/AAPL'" in html
+
+
 def test_market_cap_formatting():
     from earnings_notifier.formatting import _fmt_market_cap
 
