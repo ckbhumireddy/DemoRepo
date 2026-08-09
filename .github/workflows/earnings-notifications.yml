@@ -57,6 +57,10 @@ jobs:
           LEAD_DAYS: ${{ vars.LEAD_DAYS }}
           MIN_DAYS: ${{ vars.MIN_DAYS }}
           EXTRA_TICKERS: ${{ vars.EXTRA_TICKERS }}
+          # Repository variable acting as a kill switch: set DRY_RUN=true to
+          # make every run (including scheduled ones) preview instead of send.
+          # The workflow_dispatch checkbox below still forces a dry run too.
+          DRY_RUN: ${{ vars.DRY_RUN }}
           STATE_FILE: state/notified.json
           TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
         run: |
