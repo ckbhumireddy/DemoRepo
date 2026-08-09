@@ -90,9 +90,11 @@ def run(
     )
 
     # De-duplicate against what we've already emailed so each earnings goes out
-    # only once, even though it stays in the window for several days.
+    # only once, even though it stays in the window for several days. Dry runs
+    # skip the filter (and never write state below) so a preview always shows
+    # the full window, already-notified events included.
     known: set = set()
-    if config.use_state:
+    if config.use_state and not config.dry_run:
         known = load_state(config.state_file)
     new_events = [e for e in in_window if event_key(e) not in known]
     suppressed = len(in_window) - len(new_events)
