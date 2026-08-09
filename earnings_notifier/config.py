@@ -82,6 +82,11 @@ class Config:
     # --- Behaviour ---
     dry_run: bool = False         # render + print instead of sending email
 
+    # --- Downstream hand-off ---
+    # When set, the full notification window (pre-dedupe) is written to this
+    # JSON file each run so the earnings analyzer can consume it.
+    window_file: str = ""
+
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
@@ -105,6 +110,7 @@ class Config:
             request_timeout=_get_int("REQUEST_TIMEOUT", 20),
             ticker_limit=_get_int("TICKER_LIMIT", 0),
             dry_run=_get_bool("DRY_RUN", False),
+            window_file=os.environ.get("WINDOW_FILE", "").strip(),
         )
 
     def validate(self) -> None:

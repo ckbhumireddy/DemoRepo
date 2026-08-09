@@ -22,6 +22,7 @@ from .formatting import render_email
 from .notifier import EmailNotifier
 from .sp500 import get_sp500_tickers, normalize_ticker
 from .state import event_key, load_state, save_state
+from .window import write_window_file
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,12 @@ def run(
         len(in_window),
         config.lead_days,
     )
+
+    # Hand the full window (pre-dedupe) to downstream services such as the
+    # earnings analyzer. A data artifact, not notification state, so it is
+    # written even in dry-run.
+    if config.window_file:
+        write_window_file(config.window_file, in_window, today, config.lead_days)
 
     # De-duplicate against what we've already emailed so each earnings goes out
     # only once, even though it stays in the window for several days. Dry runs

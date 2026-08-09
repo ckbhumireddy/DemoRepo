@@ -25,7 +25,7 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -69,8 +69,30 @@ jobs:
           # same tickers get re-notified each time, and nothing is recorded.
           USE_STATE: ${{ vars.USE_STATE }}
           STATE_FILE: state/notified.json
+          # Hand-off to the trade-sheet step below. Lives outside the cached
+          # state/ path so a stale window is never restored between runs.
+          WINDOW_FILE: out/window.json
           TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
         run: |
           python -m earnings_notifier \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
             ${{ github.event.inputs.ignore_state == 'true' && '--no-state' || '' }}
+
+      # Deep per-ticker analysis + option strategy ideas for everything in the
+      # window, as a separate "Earnings Trade Sheet" email.
+      - name: Send earnings trade sheet
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+          WINDOW_FILE: out/window.json
+          ANALYZER_TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
+        run: |
+          python -m earnings_analyzer \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
