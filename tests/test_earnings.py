@@ -9,6 +9,7 @@ from earnings_notifier.earnings import (
     collect_upcoming,
     enrich_events,
     select_for_notification,
+    sort_by_market_cap,
 )
 
 TODAY = dt.date(2026, 8, 4)
@@ -195,3 +196,21 @@ def test_enrich_events_fills_details_and_tolerates_failures():
 def test_enrich_events_noop_without_enrich_method():
     events = [_ev("AAPL", 7)]
     assert enrich_events(events, _FlakyProvider()) == events
+
+
+def test_sort_by_market_cap_biggest_first_unknown_last():
+    def _cap(ticker, days_out, cap):
+        return EarningsEvent(
+            ticker, TODAY + dt.timedelta(days=days_out), market_cap=cap
+        )
+
+    events = [
+        _cap("SMALL", 1, 20e9),
+        _cap("NOCAP2", 1, None),
+        _cap("BIG", 5, 3e12),
+        _cap("NOCAP1", 3, None),
+        _cap("MID", 2, 70e9),
+    ]
+    ordered = sort_by_market_cap(events)
+    # Known caps descending, then unknown caps in date order.
+    assert [e.ticker for e in ordered] == ["BIG", "MID", "SMALL", "NOCAP2", "NOCAP1"]

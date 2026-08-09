@@ -112,6 +112,15 @@ def collect_upcoming(
     return events
 
 
+def sort_by_market_cap(events: Iterable[EarningsEvent]) -> List[EarningsEvent]:
+    """Largest companies first; unknown market caps sink to the end, where
+    events fall back to date-then-ticker order."""
+    return sorted(
+        events,
+        key=lambda e: (e.market_cap is None, -(e.market_cap or 0.0), e.date, e.ticker),
+    )
+
+
 def enrich_events(
     events: Iterable[EarningsEvent],
     provider,

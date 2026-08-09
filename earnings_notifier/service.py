@@ -16,6 +16,7 @@ from .earnings import (
     collect_upcoming,
     enrich_events,
     select_for_notification,
+    sort_by_market_cap,
 )
 from .formatting import render_email
 from .notifier import EmailNotifier
@@ -102,9 +103,11 @@ def run(
         logger.info("Suppressed %d already-notified event(s)", suppressed)
 
     # Add company name, price, 52-week range, market cap, and last-earnings
-    # results — only for the few events actually going into the email.
+    # results — only for the few events actually going into the email — then
+    # order the digest by company size, biggest names first.
     if new_events:
         new_events = enrich_events(new_events, provider, max_workers=config.max_workers)
+        new_events = sort_by_market_cap(new_events)
 
     subject, text_body, html_body = render_email(new_events, today, config.lead_days)
 
