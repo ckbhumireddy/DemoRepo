@@ -130,3 +130,41 @@ exercised via injected fakes.
   new date is a different `(ticker, date)` key and will trigger a fresh email.
 - Looking up ~500 tickers takes a couple of minutes; the job allows 30.
 - Not investment advice.
+
+## Earnings Trade Sheet (analyzer)
+
+A second service, `earnings_analyzer/`, runs right after the digest and emails
+a separate **Earnings Trade Sheet**: a deep, rated analysis card for every
+ticker in the window (fresh every run, no de-duplication).
+
+Per ticker it computes:
+
+- **Earnings history** (up to 12 quarters): beat rate, average surprise, streak
+- **Reaction history**: average absolute post-earnings move, up rate, best/worst
+- **Implied vs historical move**: ATM straddle at the event expiry vs the
+  stock's realized earnings moves, with a rich / fair / cheap verdict
+- **IV rank** (proxy: current ATM IV vs the trailing realized-vol range)
+- **Options liquidity screen**: ATM open interest, volume, spread width --
+  illiquid names get a NO TRADE badge and no suggestions
+- **Trend context**: MA20/50/200, 52-week-range position, directional bias
+- **Composite 0-100 rating** (A+..F) with a transparent component breakdown
+- **Priced option strategies** keyed to the vol verdict and bias: iron condor,
+  put/call credit spreads, debit spreads, long straddle, call calendar --
+  each with real strikes, credit/debit, max profit/loss, and breakevens
+
+Useful commands:
+
+```
+python -m earnings_analyzer --demo                    # offline preview, canned data
+python -m earnings_analyzer --dry-run --tickers AAPL  # live-data preview
+python -m earnings_analyzer                           # real email (reads out/window.json)
+```
+
+The notifier writes the window to `out/window.json` (env `WINDOW_FILE`); the
+analyzer reads it, or falls back to `--tickers` / a full window recompute.
+Tuning env vars: `HISTORY_QUARTERS`, `RICH_THRESHOLD`, `CHEAP_THRESHOLD`,
+`MIN_OPEN_INTEREST`, `MIN_OPTION_VOLUME`, `MAX_SPREAD_PCT`,
+`ANALYZER_MAX_WORKERS`, `ANALYZER_TICKER_LIMIT`, `ANALYZER_SEND_EMPTY`.
+
+> Educational analysis only -- not investment advice. Quotes are Yahoo Finance
+> mids and may be delayed; options involve substantial risk.
