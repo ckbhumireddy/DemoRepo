@@ -137,13 +137,19 @@ def snapshot_from_info(info: dict) -> Optional[Snapshot]:
 # Live provider
 # --------------------------------------------------------------------------- #
 class YFinanceMarketData:
-    """Yahoo-backed provider with the notifier's retry/backoff posture."""
+    """Yahoo-backed provider with the notifier's retry/backoff posture.
+
+    Defaults retry harder than the notifier (4 attempts, growing 2s backoff):
+    the analyzer often runs right after a 500-ticker scan and Yahoo throttles
+    the earnings-dates endpoint aggressively; with only ~13 tickers the extra
+    patience is cheap and losing history guts the whole sheet.
+    """
 
     def __init__(
         self,
         today: Optional[dt.date] = None,
-        attempts: int = 2,
-        backoff: float = 0.75,
+        attempts: int = 4,
+        backoff: float = 2.0,
     ) -> None:
         self._today = today
         self.attempts = max(1, attempts)
@@ -172,7 +178,9 @@ class YFinanceMarketData:
     def earnings_history(self, ticker: str, limit: int = 20) -> List[QuarterResult]:
         def _fetch():
             frame = self._ticker(ticker).get_earnings_dates(limit=limit)
-            return quarters_from_frame(frame, self._now())
+            # A throttled response is often an empty frame, not an exception —
+            # map it to None so _retry treats it as a failure worth retrying.
+            return quarters_from_frame(frame, self._now()) or None
 
         return self._retry(f"earnings history {ticker}", _fetch, [])
 
@@ -214,12 +222,16 @@ class YFinanceMarketData:
                 underlying = _as_float(getattr(fast, "last_price", None)) or 0.0
             except Exception:  # noqa: BLE001
                 underlying = 0.0
+            calls = contracts_from_frame(getattr(raw, "calls", None), "call", expiry)
+            puts = contracts_from_frame(getattr(raw, "puts", None), "put", expiry)
+            if not calls and not puts:
+                return None  # throttled/empty chain -> retry
             return OptionChain(
                 ticker=ticker.upper(),
                 expiry=expiry,
                 underlying_price=underlying,
-                calls=contracts_from_frame(getattr(raw, "calls", None), "call", expiry),
-                puts=contracts_from_frame(getattr(raw, "puts", None), "put", expiry),
+                calls=calls,
+                puts=puts,
             )
 
         return self._retry(f"option chain {ticker} {expiry}", _fetch, None)
