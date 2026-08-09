@@ -8,3 +8,6 @@ venv/
 
 # Secrets
 .env
+
+# Local once-only notification state (persisted via Actions cache in CI)
+state/

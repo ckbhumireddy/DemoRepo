@@ -51,15 +51,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--demo", action="store_true",
                    help="use built-in sample data (fully offline); implies --dry-run")
     p.add_argument("--lead-days", type=int, default=None,
-                   help="days ahead to notify (default 7 / LEAD_DAYS)")
-    p.add_argument("--window-days", type=int, default=None,
-                   help="+/- tolerance around lead days (default 0 / WINDOW_DAYS)")
+                   help="look-ahead horizon in days (default 7 / LEAD_DAYS)")
+    p.add_argument("--min-days", type=int, default=None,
+                   help="earliest days-out to include (default 0 / MIN_DAYS)")
     p.add_argument("--limit", type=int, default=None,
                    help="only look up the first N tickers (testing)")
     p.add_argument("--tickers", type=str, default=None,
                    help="comma-separated tickers to use instead of the S&P 500 list")
     p.add_argument("--extra-tickers", type=str, default=None,
                    help="comma-separated tickers to ADD to the S&P 500 list (watchlist)")
+    p.add_argument("--state-file", type=str, default=None,
+                   help="path to the once-only state file (default state/notified.json)")
+    p.add_argument("--no-state", action="store_true",
+                   help="disable de-duplication; report the whole window every run")
+    p.add_argument("--send-empty", action="store_true",
+                   help="send an email even when nothing new is due")
     p.add_argument("--env-file", type=str, default=None,
                    help="load environment variables from this file first")
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
@@ -102,14 +108,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         config.dry_run = True
     if args.lead_days is not None:
         config.lead_days = args.lead_days
-    if args.window_days is not None:
-        config.window_days = args.window_days
+    if args.min_days is not None:
+        config.min_days = args.min_days
     if args.limit is not None:
         config.ticker_limit = args.limit
     if args.extra_tickers:
         config.extra_tickers = [
             t.strip() for t in args.extra_tickers.split(",") if t.strip()
         ]
+    if args.state_file is not None:
+        config.state_file = args.state_file
+    if args.no_state or args.demo:
+        # --demo is a self-contained preview; don't touch real state.
+        config.use_state = False
+    if args.send_empty:
+        config.send_empty = True
 
     today = dt.date.today()
     provider = None
@@ -130,10 +143,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
+    if result.notified:
+        tail = "Email sent."
+    elif config.dry_run:
+        tail = "(dry-run, no email sent)"
+    else:
+        tail = "(nothing new; no email sent)"
     print(
         f"Done. {result.resolved}/{result.total_tickers} tickers resolved, "
-        f"{len(result.selected)} in window. "
-        + ("(dry-run, no email sent)" if not result.notified else "Email sent.")
+        f"{len(result.in_window)} in window, {len(result.new_events)} new. "
+        + tail
     )
     return 0
 

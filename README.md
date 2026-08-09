@@ -1,8 +1,8 @@
 # S&P 500 Earnings Notifier
 
-Emails you a digest of **S&P 500 companies reporting earnings about one week
-ahead**, so you have time to prepare. Runs automatically every weekday via
-GitHub Actions — no server to maintain.
+Emails you a digest of **S&P 500 companies reporting earnings within the next
+week**, once per company, so you have time to prepare. Runs automatically every
+weekday via GitHub Actions — no server to maintain.
 
 ## How it works
 
@@ -11,16 +11,20 @@ GitHub Actions — no server to maintain.
    the fetch fails).
 2. **Earnings dates** — looks up each ticker's next earnings date from Yahoo
    Finance (via `yfinance`).
-3. **Selection** — keeps the companies whose earnings land exactly `LEAD_DAYS`
-   (default **7**) days out, `±WINDOW_DAYS` tolerance. A daily run therefore
-   notifies each company once, one week before it reports.
-4. **Notify** — renders a plain-text + HTML digest and emails it over SMTP.
+3. **Selection** — keeps the companies whose earnings fall **within the next
+   `LEAD_DAYS`** (default **7**) days (from `MIN_DAYS`, default today).
+4. **De-duplicate** — remembers which `(ticker, date)` pairs have already been
+   emailed (small JSON state file), so each earnings goes out **exactly once**
+   even though it stays inside the window for several days.
+5. **Notify** — if anything new is due, renders a plain-text + HTML digest and
+   emails it over SMTP (otherwise sends nothing).
 
 ```
 earnings_notifier/
   config.py       env-driven configuration
   sp500.py        S&P 500 roster (Wikipedia + fallback)
   earnings.py     earnings model, yfinance provider, selection logic (pure)
+  state.py        once-only "already notified" state (JSON)
   formatting.py   text/HTML email rendering (pure)
   notifier.py     SMTP delivery
   service.py      orchestration
@@ -50,13 +54,16 @@ python -m earnings_notifier --env-file .env
 
 | Flag | Meaning |
 |------|---------|
-| `--dry-run` | Render and print the digest; don't send email |
+| `--dry-run` | Render and print the digest; don't send email or write state |
 | `--demo` | Use built-in sample data, fully offline (implies `--dry-run`) |
-| `--lead-days N` | Days ahead to notify (default 7) |
-| `--window-days N` | ± tolerance around lead days (default 0) |
+| `--lead-days N` | Look-ahead horizon in days (default 7) |
+| `--min-days N` | Earliest days-out to include (default 0) |
 | `--limit N` | Only look up the first N tickers (testing) |
 | `--tickers A,B,C` | Use these tickers instead of the S&P 500 list |
 | `--extra-tickers A,B` | Add these tickers on top of the S&P 500 (watchlist) |
+| `--state-file PATH` | Where to store once-only state (default `state/notified.json`) |
+| `--no-state` | Disable de-dup; report the whole window every run |
+| `--send-empty` | Email even when nothing new is due |
 | `--env-file PATH` | Load env vars from a file first |
 | `-v` | Debug logging |
 
@@ -81,7 +88,20 @@ Configure these in **Settings → Secrets and variables → Actions**:
 | `SMTP_USE_TLS` | `true` (STARTTLS/587) |
 | `SMTP_USE_SSL` | `false` (set `true` + port `465` for implicit TLS) |
 
-**Variables** (optional): `LEAD_DAYS`, `WINDOW_DAYS`, `EXTRA_TICKERS`.
+**Variables** (optional): `LEAD_DAYS`, `MIN_DAYS`, `EXTRA_TICKERS`.
+
+### Emailing each earnings only once
+
+The job reports every earnings falling **within the next `LEAD_DAYS`** days.
+Because an earnings date stays inside that window for several days, the service
+keeps a small state file (`state/notified.json`) of `(ticker, date)` pairs it
+has already emailed and skips them on later runs — so you get **one** heads-up
+per earnings, the first day it enters the window. On days with nothing new, no
+email is sent (set `SEND_EMPTY=true` to change that).
+
+In GitHub Actions this state is persisted between runs via `actions/cache` (no
+repo commits). Worst case, if the cache is ever evicted, you might get one
+duplicate — harmless. Set `USE_STATE=false` to turn de-duplication off.
 
 To track names **outside** the S&P 500 (e.g. `NBIS`), set the `EXTRA_TICKERS`
 Actions variable to a comma-separated list — they're appended to the roster and
@@ -106,7 +126,7 @@ exercised via injected fakes.
 
 - Earnings dates from Yahoo Finance are often **estimates** until a company
   confirms; they can shift. The digest flags estimated vs. confirmed and
-  reminds you to verify. Adjust `WINDOW_DAYS` if you'd rather catch dates that
-  move by a day or two.
+  reminds you to verify. If a date moves earlier after you were notified, the
+  new date is a different `(ticker, date)` key and will trigger a fresh email.
 - Looking up ~500 tickers takes a couple of minutes; the job allows 30.
 - Not investment advice.

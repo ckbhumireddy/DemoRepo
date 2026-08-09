@@ -42,20 +42,19 @@ def select_for_notification(
     events: Iterable[EarningsEvent],
     today: dt.date,
     lead_days: int = 7,
-    window_days: int = 0,
+    min_days: int = 0,
 ) -> List[EarningsEvent]:
-    """Return the events whose earnings date is ``lead_days`` away.
+    """Return the events whose earnings date falls within the look-ahead window.
 
     An event qualifies when the number of days from ``today`` to the earnings
-    date falls in ``[lead_days - window_days, lead_days + window_days]``. With
-    the defaults (lead 7, window 0) this fires exactly one week ahead, so each
-    upcoming earnings is notified once when a daily job runs.
+    date is in ``[min_days, lead_days]`` (inclusive). With the defaults this is
+    "any earnings from today through one week out". A given earnings stays in
+    this window for several days; de-duplication against persisted state (see
+    ``state.py``) is what keeps each one to a single email.
 
     Results are sorted by date, then ticker.
     """
-    lo = lead_days - window_days
-    hi = lead_days + window_days
-    selected = [e for e in events if lo <= e.days_until(today) <= hi]
+    selected = [e for e in events if min_days <= e.days_until(today) <= lead_days]
     return sorted(selected, key=lambda e: (e.date, e.ticker))
 
 

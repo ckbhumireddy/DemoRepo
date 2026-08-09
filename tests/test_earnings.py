@@ -14,32 +14,33 @@ def _ev(ticker, days_out, is_estimate=True):
     return EarningsEvent(ticker, TODAY + dt.timedelta(days=days_out), is_estimate)
 
 
-def test_selects_exactly_one_week_ahead():
-    events = [_ev("AAPL", 7), _ev("MSFT", 6), _ev("NVDA", 8), _ev("AMZN", 30)]
-    selected = select_for_notification(events, TODAY, lead_days=7, window_days=0)
-    assert [e.ticker for e in selected] == ["AAPL"]
+def test_selects_everything_within_the_week():
+    # 4 days out (like NBIS) must be caught, not just an exact-7-day match.
+    events = [_ev("AAPL", 7), _ev("NBIS", 4), _ev("NVDA", 8), _ev("AMZN", 30)]
+    selected = select_for_notification(events, TODAY, lead_days=7)
+    assert [e.ticker for e in selected] == ["NBIS", "AAPL"]  # sorted by date
 
 
-def test_window_includes_neighbours():
-    events = [_ev("AAPL", 7), _ev("MSFT", 6), _ev("NVDA", 8), _ev("AMZN", 9)]
-    selected = select_for_notification(events, TODAY, lead_days=7, window_days=1)
-    assert {e.ticker for e in selected} == {"AAPL", "MSFT", "NVDA"}
+def test_min_days_lower_bound():
+    events = [_ev("A", 0), _ev("B", 2), _ev("C", 7)]
+    selected = select_for_notification(events, TODAY, lead_days=7, min_days=2)
+    assert {e.ticker for e in selected} == {"B", "C"}
 
 
-def test_excludes_past_and_today():
+def test_includes_today_by_default():
     events = [_ev("A", -1), _ev("B", 0), _ev("C", 7)]
-    selected = select_for_notification(events, TODAY, lead_days=7, window_days=0)
-    assert [e.ticker for e in selected] == ["C"]
+    selected = select_for_notification(events, TODAY, lead_days=7)
+    assert [e.ticker for e in selected] == ["B", "C"]  # past excluded, today kept
 
 
 def test_results_sorted_by_date_then_ticker():
     events = [_ev("ZZZ", 7), _ev("AAA", 7), _ev("MMM", 6)]
-    selected = select_for_notification(events, TODAY, lead_days=7, window_days=1)
+    selected = select_for_notification(events, TODAY, lead_days=7)
     assert [e.ticker for e in selected] == ["MMM", "AAA", "ZZZ"]
 
 
-def test_empty_when_nothing_matches():
-    events = [_ev("A", 1), _ev("B", 40)]
+def test_empty_when_nothing_in_window():
+    events = [_ev("A", 8), _ev("B", 40)]
     assert select_for_notification(events, TODAY, lead_days=7) == []
 
 

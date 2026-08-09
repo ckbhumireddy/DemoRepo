@@ -56,10 +56,22 @@ class Config:
     email_to: List[str] = field(default_factory=list)
 
     # --- Notification window ---
-    # Notify when an earnings date is exactly ``lead_days`` away, plus/minus
-    # ``window_days`` of tolerance. Defaults give "one week ahead".
+    # Notify for any earnings landing between ``min_days`` and ``lead_days``
+    # from today, inclusive. Defaults cover "any time in the next week"
+    # (today through 7 days out). Deduplication (below) makes sure each
+    # earnings is emailed only once even though it stays in this window for
+    # several days.
     lead_days: int = 7
-    window_days: int = 0
+    min_days: int = 0
+
+    # --- Once-only state ---
+    # To email each earnings just once, notified (ticker, date) pairs are
+    # remembered in a small JSON file between runs. Set ``use_state`` False to
+    # disable (every run reports the full window).
+    use_state: bool = True
+    state_file: str = "state/notified.json"
+    state_retention_days: int = 120   # prune remembered entries older than this
+    send_empty: bool = False          # email even when nothing new is due
 
     # --- Data fetching ---
     max_workers: int = 8          # concurrent yfinance lookups
@@ -83,7 +95,12 @@ class Config:
             email_to=_get_list("EMAIL_TO"),
             extra_tickers=_get_list("EXTRA_TICKERS"),
             lead_days=_get_int("LEAD_DAYS", 7),
-            window_days=_get_int("WINDOW_DAYS", 0),
+            min_days=_get_int("MIN_DAYS", 0),
+            use_state=_get_bool("USE_STATE", True),
+            state_file=os.environ.get("STATE_FILE", "state/notified.json").strip()
+            or "state/notified.json",
+            state_retention_days=_get_int("STATE_RETENTION_DAYS", 120),
+            send_empty=_get_bool("SEND_EMPTY", False),
             max_workers=_get_int("MAX_WORKERS", 8),
             request_timeout=_get_int("REQUEST_TIMEOUT", 20),
             ticker_limit=_get_int("TICKER_LIMIT", 0),
@@ -97,8 +114,10 @@ class Config:
         """
         if self.lead_days < 0:
             raise ConfigError("LEAD_DAYS must be >= 0")
-        if self.window_days < 0:
-            raise ConfigError("WINDOW_DAYS must be >= 0")
+        if self.min_days < 0:
+            raise ConfigError("MIN_DAYS must be >= 0")
+        if self.min_days > self.lead_days:
+            raise ConfigError("MIN_DAYS must be <= LEAD_DAYS")
         if self.max_workers < 1:
             raise ConfigError("MAX_WORKERS must be >= 1")
 

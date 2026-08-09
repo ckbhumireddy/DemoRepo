@@ -32,9 +32,9 @@ def test_subject_singular_grammar():
 
 def test_empty_digest_is_clear():
     subject, text, html = render_email([], TODAY, 7)
-    assert "none" in subject.lower()
-    assert "no s&p 500 companies" in text.lower()
-    assert "No S&amp;P 500 companies" in html
+    assert "nothing new" in subject.lower()
+    assert "no new s&p 500 earnings" in text.lower()
+    assert "No new S&amp;P 500 earnings" in html
 
 
 def test_text_lists_days_until():
