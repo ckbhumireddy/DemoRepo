@@ -3,7 +3,11 @@ import datetime as dt
 from earnings_notifier.earnings import (
     EarningsEvent,
     YFinanceProvider,
+    _as_float,
+    _last_reported_earnings,
+    _post_earnings_move,
     collect_upcoming,
+    enrich_events,
     select_for_notification,
 )
 
@@ -96,3 +100,98 @@ def test_provider_gives_up_after_attempts():
     provider._lookup_once = always_none
     assert provider.next_earnings_date("PXD") is None
     assert calls["n"] == 2  # retried up to the attempt limit
+
+
+def test_as_float_rejects_nan_and_garbage():
+    assert _as_float(1.5) == 1.5
+    assert _as_float("2.5") == 2.5
+    assert _as_float(None) is None
+    assert _as_float(float("nan")) is None
+    assert _as_float("n/a") is None
+    assert _as_float(True) is None
+
+
+def test_last_reported_earnings_picks_most_recent_past_row():
+    import pytest
+
+    pd = pytest.importorskip("pandas")
+
+    df = pd.DataFrame(
+        {
+            "EPS Estimate": [1.50, 1.43, 1.30, float("nan")],
+            "Reported EPS": [float("nan"), 1.57, 1.35, 1.20],
+            "Surprise(%)": [float("nan"), 9.8, 3.8, float("nan")],
+        },
+        index=pd.to_datetime(
+            ["2026-08-11", "2026-07-31", "2026-04-30", "2026-01-29"]
+        ),
+    )
+    last = _last_reported_earnings(df, TODAY)
+    # The 08-11 row is in the future and the most recent past row wins.
+    assert last == {
+        "last_earnings_date": dt.date(2026, 7, 31),
+        "last_eps_estimate": 1.43,
+        "last_eps_actual": 1.57,
+        "last_surprise_pct": 9.8,
+    }
+
+
+def test_last_reported_earnings_empty_when_no_reported_eps():
+    import pytest
+
+    pd = pytest.importorskip("pandas")
+
+    df = pd.DataFrame(
+        {"EPS Estimate": [1.5], "Reported EPS": [float("nan")], "Surprise(%)": [float("nan")]},
+        index=pd.to_datetime(["2026-04-30"]),
+    )
+    assert _last_reported_earnings(df, TODAY) == {}
+
+
+def test_post_earnings_move_brackets_the_report_date():
+    import pytest
+
+    pd = pytest.importorskip("pandas")
+    # Report on Fri Jul 31 (after close); the weekend gap must not matter.
+    history = pd.DataFrame(
+        {"Close": [100.0, 102.0, 110.5, 111.0]},
+        index=pd.to_datetime(["2026-07-29", "2026-07-30", "2026-08-03", "2026-08-04"]),
+    )
+    move = _post_earnings_move(history, dt.date(2026, 7, 31))
+    # Last close before (102.0) -> first close after (110.5) = +8.33%.
+    assert move == pytest.approx(8.33, abs=0.01)
+
+
+def test_post_earnings_move_none_when_not_bracketed():
+    import pytest
+
+    pd = pytest.importorskip("pandas")
+    only_before = pd.DataFrame(
+        {"Close": [100.0]}, index=pd.to_datetime(["2026-07-30"])
+    )
+    assert _post_earnings_move(only_before, dt.date(2026, 7, 31)) is None
+    assert _post_earnings_move(None, dt.date(2026, 7, 31)) is None
+
+
+class _EnrichingProvider(_FlakyProvider):
+    def enrich(self, event):
+        if event.ticker == "BOOM":
+            raise RuntimeError("quote lookup failed")
+        return EarningsEvent(
+            event.ticker, event.date, event.is_estimate,
+            company=f"{event.ticker} Corp", price=100.0,
+        )
+
+
+def test_enrich_events_fills_details_and_tolerates_failures():
+    events = [_ev("AAPL", 7), _ev("BOOM", 6)]
+    enriched = enrich_events(events, _EnrichingProvider(), max_workers=2)
+    by_ticker = {e.ticker: e for e in enriched}
+    assert by_ticker["AAPL"].company == "AAPL Corp"
+    assert by_ticker["AAPL"].price == 100.0
+    assert by_ticker["BOOM"] == events[1]  # failure leaves the event unchanged
+
+
+def test_enrich_events_noop_without_enrich_method():
+    events = [_ev("AAPL", 7)]
+    assert enrich_events(events, _FlakyProvider()) == events
