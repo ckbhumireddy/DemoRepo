@@ -1,13 +1,15 @@
 name: S&P 500 earnings notifications
 
-# Runs every weekday morning and emails a digest of S&P 500 companies
-# reporting earnings ~1 week out. Also runnable on demand from the Actions tab
-# (optionally as a dry run that prints instead of sending).
+# Two weekday schedules:
+#   13:00 UTC (~09:00 ET, pre-market)  -> calendar digest email + window file
+#   14:30 UTC (~10:30 ET, options open) -> deep-analysis trade-sheet email,
+#     run after the open so option quotes/spreads are live, not stale.
+# Manual dispatch runs both back to back (optionally as a dry run).
 
 on:
   schedule:
-    # 13:00 UTC ~= 09:00 US Eastern (before the market opens). Cron in UTC.
-    - cron: "0 13 * * 1-5"
+    - cron: "0 13 * * 1-5"    # digest
+    - cron: "30 14 * * 1-5"   # trade sheet
   workflow_dispatch:
     inputs:
       dry_run:
@@ -24,6 +26,8 @@ on:
 
 jobs:
   notify:
+    # The digest job: every trigger except the 14:30 trade-sheet cron.
+    if: github.event_name != 'schedule' || github.event.schedule == '0 13 * * 1-5'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -48,6 +52,16 @@ jobs:
           restore-keys: |
             earnings-state-
 
+      # Persist the window hand-off so the 14:30 trade-sheet job can consume
+      # the window this run computes without re-scanning 500 tickers.
+      - name: Cache window hand-off
+        uses: actions/cache@v4
+        with:
+          path: out
+          key: earnings-window-${{ github.run_id }}
+          restore-keys: |
+            earnings-window-
+
       - name: Send earnings digest
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -69,8 +83,8 @@ jobs:
           # same tickers get re-notified each time, and nothing is recorded.
           USE_STATE: ${{ vars.USE_STATE }}
           STATE_FILE: state/notified.json
-          # Hand-off to the trade-sheet step below. Lives outside the cached
-          # state/ path so a stale window is never restored between runs.
+          # Hand-off consumed by the trade-sheet job. Cached (see above) but
+          # outside state/ so notification state and window data stay separate.
           WINDOW_FILE: out/window.json
           TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
         run: |
@@ -78,9 +92,13 @@ jobs:
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
             ${{ github.event.inputs.ignore_state == 'true' && '--no-state' || '' }}
 
-      # Deep per-ticker analysis + option strategy ideas for everything in the
-      # window, as a separate "Earnings Trade Sheet" email.
+      # On manual dispatch, also run the trade sheet in the same job so a
+      # single "Run workflow" tests the whole pipeline. Scheduled trade sheets
+      # run in the dedicated 14:30 job below instead (live option quotes).
+      # The pause lets Yahoo's rate limiting cool down after the 500-ticker
+      # scan above — without it the earnings-history endpoint returns empties.
       - name: Send earnings trade sheet
+        if: github.event_name == 'workflow_dispatch'
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -94,5 +112,50 @@ jobs:
           WINDOW_FILE: out/window.json
           ANALYZER_TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
         run: |
+          sleep 60
           python -m earnings_analyzer \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+
+  trade_sheet:
+    # The dedicated analyzer run at 14:30 UTC (~10:30 ET), after options open.
+    if: github.event_name == 'schedule' && github.event.schedule == '30 14 * * 1-5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Reuse the window the 13:00 digest run computed. Restore-only: this
+      # job never writes the window. If the cache misses (e.g. the morning
+      # run failed), the analyzer recomputes the window itself (slow path).
+      - name: Restore window hand-off
+        uses: actions/cache/restore@v4
+        with:
+          path: out
+          key: earnings-window-
+          restore-keys: |
+            earnings-window-
+
+      - name: Send earnings trade sheet
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          LEAD_DAYS: ${{ vars.LEAD_DAYS }}
+          MIN_DAYS: ${{ vars.MIN_DAYS }}
+          EXTRA_TICKERS: ${{ vars.EXTRA_TICKERS }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+          WINDOW_FILE: out/window.json
+        run: python -m earnings_analyzer
