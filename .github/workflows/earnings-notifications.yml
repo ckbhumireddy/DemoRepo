@@ -14,6 +14,10 @@ on:
         description: "Preview only (do not send email)"
         type: boolean
         default: false
+      ignore_state:
+        description: "Re-email the full window, even already-notified tickers"
+        type: boolean
+        default: false
       ticker_limit:
         description: "Limit number of tickers (0 = all)"
         default: "0"
@@ -61,8 +65,12 @@ jobs:
           # make every run (including scheduled ones) preview instead of send.
           # The workflow_dispatch checkbox below still forces a dry run too.
           DRY_RUN: ${{ vars.DRY_RUN }}
+          # Set USE_STATE=false to email the full window on every run — the
+          # same tickers get re-notified each time, and nothing is recorded.
+          USE_STATE: ${{ vars.USE_STATE }}
           STATE_FILE: state/notified.json
           TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
         run: |
           python -m earnings_notifier \
-            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} \
+            ${{ github.event.inputs.ignore_state == 'true' && '--no-state' || '' }}
