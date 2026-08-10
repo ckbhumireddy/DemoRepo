@@ -15,7 +15,7 @@ from .analyzer import analyze_ticker
 from .config import AnalyzerConfig
 from .formatting import render_email
 from .models import TickerAnalysis
-from .provider import MarketDataProvider, YFinanceMarketData
+from .provider import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,9 @@ def run_analyzer(
         logger.info("Limiting analysis to first %d entr(ies)", len(entries))
 
     if provider is None:
-        provider = YFinanceMarketData(today=today)
+        from .schwab import build_provider
+
+        provider = build_provider(config, today=today)
 
     logger.info("Analyzing %d earnings setup(s)...", len(entries))
 

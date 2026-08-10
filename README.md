@@ -168,3 +168,19 @@ Tuning env vars: `HISTORY_QUARTERS`, `RICH_THRESHOLD`, `CHEAP_THRESHOLD`,
 
 > Educational analysis only -- not investment advice. Quotes are Yahoo Finance
 > mids and may be delayed; options involve substantial risk.
+
+### Schwab real-time market data (optional)
+
+With a Schwab brokerage + developer account, the analyzer can price chains
+and history from the **Schwab Trader API in real time** (Yahoo stays as the
+automatic fallback, and always supplies earnings history, which Schwab does
+not offer):
+
+1. Register an app at developer.schwab.com (callback `https://127.0.0.1`).
+2. `gh secret set SCHWAB_APP_KEY` and `gh secret set SCHWAB_APP_SECRET`.
+3. Weekly (Schwab refresh tokens hard-expire after 7 days):
+   `python scripts/schwab_auth.py --set-secret` -- browser login, then the
+   token lands in the `SCHWAB_TOKEN` secret automatically.
+
+If the token lapses, runs keep working on Yahoo data -- quality degrades,
+nothing breaks.
