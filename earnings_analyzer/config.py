@@ -42,6 +42,14 @@ class AnalyzerConfig(Config):
     analyzer_ticker_limit: int = 0     # 0 = analyze the whole window
     analyzer_send_empty: bool = False  # email even when nothing analyzed
 
+    # Charles Schwab Trader API (optional). When all three are set, quotes,
+    # chains, and price history come from Schwab in real time, with Yahoo as
+    # automatic fallback. See scripts/schwab_auth.py for the token.
+    schwab_app_key: str = ""
+    schwab_app_secret: str = ""
+    schwab_token: str = ""        # the token JSON itself (e.g. a repo secret)
+    schwab_token_file: str = ""   # ...or a path to it on disk
+
     @classmethod
     def from_env(cls) -> "AnalyzerConfig":
         base = dataclasses.asdict(Config.from_env())
@@ -56,6 +64,10 @@ class AnalyzerConfig(Config):
             analyzer_max_workers=_get_int("ANALYZER_MAX_WORKERS", 4),
             analyzer_ticker_limit=_get_int("ANALYZER_TICKER_LIMIT", 0),
             analyzer_send_empty=_get_bool("ANALYZER_SEND_EMPTY", False),
+            schwab_app_key=os.environ.get("SCHWAB_APP_KEY", "").strip(),
+            schwab_app_secret=os.environ.get("SCHWAB_APP_SECRET", "").strip(),
+            schwab_token=os.environ.get("SCHWAB_TOKEN", "").strip(),
+            schwab_token_file=os.environ.get("SCHWAB_TOKEN_FILE", "").strip(),
         )
         # The analyzer defaults to reading the hand-off file the notifier wrote.
         if not cfg.window_file:

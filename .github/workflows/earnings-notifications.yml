@@ -111,6 +111,11 @@ jobs:
           DRY_RUN: ${{ vars.DRY_RUN }}
           WINDOW_FILE: out/window.json
           ANALYZER_TICKER_LIMIT: ${{ github.event.inputs.ticker_limit }}
+          # Schwab real-time market data (optional; Yahoo fallback when unset
+          # or when the weekly token has lapsed — see scripts/schwab_auth.py).
+          SCHWAB_APP_KEY: ${{ secrets.SCHWAB_APP_KEY }}
+          SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
+          SCHWAB_TOKEN: ${{ secrets.SCHWAB_TOKEN }}
         run: |
           sleep 60
           python -m earnings_analyzer \
@@ -158,4 +163,7 @@ jobs:
           EXTRA_TICKERS: ${{ vars.EXTRA_TICKERS }}
           DRY_RUN: ${{ vars.DRY_RUN }}
           WINDOW_FILE: out/window.json
+          SCHWAB_APP_KEY: ${{ secrets.SCHWAB_APP_KEY }}
+          SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
+          SCHWAB_TOKEN: ${{ secrets.SCHWAB_TOKEN }}
         run: python -m earnings_analyzer
