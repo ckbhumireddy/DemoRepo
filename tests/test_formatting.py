@@ -141,6 +141,30 @@ def test_ticker_links_to_yahoo_quote_page():
     assert "<a href='https://finance.yahoo.com/quote/AAPL'" in html
 
 
+def test_new_badge_in_text_and_html():
+    events = [
+        EarningsEvent("AAPL", dt.date(2026, 8, 11), True, first_notice=True),
+        EarningsEvent("NVDA", dt.date(2026, 8, 11), False),
+    ]
+    text = render_text(events, TODAY, 7)
+    html = render_html(events, TODAY, 7)
+    assert "AAPL    [NEW]" in text
+    assert text.count("[NEW]") == 1        # only the first-notice event
+    assert ">NEW</span>" in html
+
+
+def test_subject_counts_new_events():
+    events = [
+        EarningsEvent("AAPL", dt.date(2026, 8, 11), True, first_notice=True),
+        EarningsEvent("NVDA", dt.date(2026, 8, 11), False),
+    ]
+    subject, _, _ = render_email(events, TODAY, 7)
+    assert "2 companies, 1 new" in subject
+    # No suffix when nothing is new, or when everything is new.
+    all_old, _, _ = render_email(_events(), TODAY, 7)
+    assert "new" not in all_old
+
+
 def test_market_cap_formatting():
     from earnings_notifier.formatting import _fmt_market_cap
 
