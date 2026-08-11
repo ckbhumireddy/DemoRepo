@@ -42,6 +42,10 @@ class AnalyzerConfig(Config):
     analyzer_ticker_limit: int = 0     # 0 = analyze the whole window
     analyzer_send_empty: bool = False  # email even when nothing analyzed
 
+    # Suggestion log + outcome grading. Lives under state/ so the workflow
+    # cache persists it between runs. Empty disables the scorecard.
+    scorecard_file: str = "state/scorecard.json"
+
     # Charles Schwab Trader API (optional). When all three are set, quotes,
     # chains, and price history come from Schwab in real time, with Yahoo as
     # automatic fallback. See scripts/schwab_auth.py for the token.
@@ -64,6 +68,9 @@ class AnalyzerConfig(Config):
             analyzer_max_workers=_get_int("ANALYZER_MAX_WORKERS", 4),
             analyzer_ticker_limit=_get_int("ANALYZER_TICKER_LIMIT", 0),
             analyzer_send_empty=_get_bool("ANALYZER_SEND_EMPTY", False),
+            scorecard_file=os.environ.get(
+                "SCORECARD_FILE", "state/scorecard.json"
+            ).strip(),
             schwab_app_key=os.environ.get("SCHWAB_APP_KEY", "").strip(),
             schwab_app_secret=os.environ.get("SCHWAB_APP_SECRET", "").strip(),
             schwab_token=os.environ.get("SCHWAB_TOKEN", "").strip(),

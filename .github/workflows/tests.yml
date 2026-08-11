@@ -1,0 +1,27 @@
+name: Tests
+
+# Runs the full test suite on every pull request and on pushes to master.
+# The pandas/yfinance-dependent tests that skip locally run here.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -q

@@ -151,6 +151,10 @@ def _strategy_lines(s: PricedStrategy) -> List[str]:
         figures.append(f"max loss ${s.max_loss:.2f}")
     if s.breakevens:
         figures.append("BE " + "/".join(f"{b:g}" for b in s.breakevens))
+    if s.backtest_wins is not None and s.backtest_total:
+        figures.append(
+            f"won {s.backtest_wins}/{s.backtest_total} past reports"
+        )
     return [
         f"{s.strategy} ({s.outlook}): {_legs_text(s)}",
         " · ".join(figures),
@@ -171,7 +175,34 @@ def _rating_breakdown(a: TickerAnalysis) -> Optional[str]:
 # --------------------------------------------------------------------------- #
 # Plain text
 # --------------------------------------------------------------------------- #
-def render_text(analyses: List[TickerAnalysis], today: dt.date) -> str:
+def _scorecard_lines(scorecard) -> List[str]:
+    """Plain-text scorecard block; empty list when there is nothing to show."""
+    if scorecard is None or (scorecard.graded == 0 and scorecard.pending == 0):
+        return []
+    lines = ["Scorecard (past suggestions graded against the actual move):"]
+    if scorecard.graded:
+        rate = f"{scorecard.win_rate * 100:.0f}%"
+        lines.append(
+            f"  {scorecard.graded} graded · {scorecard.wins} wins · "
+            f"{scorecard.losses} losses · {rate} win rate"
+            + (f" · {scorecard.pending} pending" if scorecard.pending else "")
+        )
+        for e in scorecard.recent:
+            outcome = "WIN " if e["outcome"] == "win" else "LOSS"
+            lines.append(
+                f"  {outcome} {e['ticker']} {e['strategy']} "
+                f"({e['event_date']}, moved {e['actual_move_pct']:+.1f}%)"
+            )
+    else:
+        lines.append(
+            f"  {scorecard.pending} suggestion(s) recorded, none graded yet."
+        )
+    return lines
+
+
+def render_text(
+    analyses: List[TickerAnalysis], today: dt.date, scorecard=None
+) -> str:
     lines = [
         "Earnings trade sheet",
         f"(generated {_weekday(today)})",
@@ -179,6 +210,10 @@ def render_text(analyses: List[TickerAnalysis], today: dt.date) -> str:
     ]
     if not analyses:
         lines.append("No upcoming earnings to analyze.")
+        score_block = _scorecard_lines(scorecard)
+        if score_block:
+            lines.append("")
+            lines.extend(score_block)
         return "\n".join(lines)
 
     for a in analyses:
@@ -214,6 +249,10 @@ def render_text(analyses: List[TickerAnalysis], today: dt.date) -> str:
         lines.append("")
 
     lines.append(f"{len(analyses)} setup(s) analyzed.")
+    score_block = _scorecard_lines(scorecard)
+    if score_block:
+        lines.append("")
+        lines.extend(score_block)
     lines.append("")
     lines.append(
         "Educational analysis only — not investment advice. Quotes are Yahoo "
@@ -226,7 +265,9 @@ def render_text(analyses: List[TickerAnalysis], today: dt.date) -> str:
 # --------------------------------------------------------------------------- #
 # HTML (stacked cards, matching the calendar digest style)
 # --------------------------------------------------------------------------- #
-def render_html(analyses: List[TickerAnalysis], today: dt.date) -> str:
+def render_html(
+    analyses: List[TickerAnalysis], today: dt.date, scorecard=None
+) -> str:
     header = (
         "<h2 style='margin:0 0 4px'>Earnings trade sheet</h2>"
         f"<p style='margin:0 0 16px;color:#555'>Generated {html.escape(_weekday(today))}</p>"
@@ -235,6 +276,7 @@ def render_html(analyses: List[TickerAnalysis], today: dt.date) -> str:
         body = "<p>No upcoming earnings to analyze.</p>"
     else:
         body = "".join(_card(a, today) for a in analyses)
+    body += _scorecard_html(scorecard)
 
     footer = (
         "<p style='margin-top:16px;color:#777;font-size:12px'>"
@@ -319,12 +361,48 @@ def _card(a: TickerAnalysis, today: dt.date) -> str:
     )
 
 
+def _scorecard_html(scorecard) -> str:
+    if scorecard is None or (scorecard.graded == 0 and scorecard.pending == 0):
+        return ""
+    title = "<div style='font-size:15px'><b>Scorecard</b></div>"
+    if not scorecard.graded:
+        body = (
+            f"<div style='margin-top:4px;color:#444'>{scorecard.pending} "
+            "suggestion(s) recorded, none graded yet.</div>"
+        )
+    else:
+        rate = f"{scorecard.win_rate * 100:.0f}%"
+        pending = f" &middot; {scorecard.pending} pending" if scorecard.pending else ""
+        rows = [
+            f"<div style='margin-top:4px'><b>{scorecard.graded} graded</b>"
+            f" &middot; {scorecard.wins} wins &middot; {scorecard.losses} losses"
+            f" &middot; <b>{rate} win rate</b>{pending}</div>"
+        ]
+        for e in scorecard.recent:
+            win = e["outcome"] == "win"
+            color = GREEN if win else RED
+            label = "WIN" if win else "LOSS"
+            rows.append(
+                f"<div style='margin-top:2px;color:#444'>"
+                f"<span style='color:{color};font-weight:bold'>{label}</span> "
+                f"{html.escape(e['ticker'])} {html.escape(e['strategy'])} "
+                f"({html.escape(e['event_date'])}, moved {e['actual_move_pct']:+.1f}%)"
+                "</div>"
+            )
+        body = "".join(rows)
+    return (
+        "<div style='border:1px solid #d0d0d0;border-radius:8px;"
+        "padding:10px 14px;margin:0 0 10px;background:#fafafa'>"
+        + title + body + "</div>"
+    )
+
+
 def render_email(
-    analyses: List[TickerAnalysis], today: dt.date
+    analyses: List[TickerAnalysis], today: dt.date, scorecard=None
 ) -> Tuple[str, str, str]:
     """Return ``(subject, text_body, html_body)``."""
     return (
         render_subject(analyses, today),
-        render_text(analyses, today),
-        render_html(analyses, today),
+        render_text(analyses, today, scorecard=scorecard),
+        render_html(analyses, today, scorecard=scorecard),
     )
