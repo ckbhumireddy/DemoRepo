@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 
+from .backtest import attach_backtests
 from .config import AnalyzerConfig
 from .history import (
     attach_reactions,
@@ -107,6 +108,10 @@ def analyze_ticker(
         if spot
         else []
     )
+    # Replay each suggestion against the past reports it would have faced.
+    if strategies and spot:
+        past_moves = [q.reaction_pct for q in recent if q.reaction_pct is not None]
+        attach_backtests(strategies, spot, past_moves)
 
     return TickerAnalysis(
         ticker=ticker,

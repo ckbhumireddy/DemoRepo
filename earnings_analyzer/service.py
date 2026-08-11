@@ -137,7 +137,28 @@ def run_analyzer(
     # Best setups first.
     analyses.sort(key=lambda a: (a.rating.score if a.rating else 0.0), reverse=True)
 
-    subject, text_body, html_body = render_email(analyses, today)
+    # Scorecard: grade past suggestions against what actually happened, then
+    # record today's. Dry runs read the summary but write nothing.
+    scorecard_summary = None
+    if config.scorecard_file:
+        from .scorecard import (
+            grade_pending,
+            load_scorecard,
+            record_suggestions,
+            save_scorecard,
+            summarize,
+        )
+
+        data = load_scorecard(config.scorecard_file)
+        if not config.dry_run:
+            grade_pending(data, provider, today)
+            record_suggestions(data, analyses, today)
+            save_scorecard(config.scorecard_file, data, today)
+        scorecard_summary = summarize(data)
+
+    subject, text_body, html_body = render_email(
+        analyses, today, scorecard=scorecard_summary
+    )
 
     sent = False
     if analyses or config.analyzer_send_empty:

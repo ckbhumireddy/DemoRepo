@@ -121,6 +121,19 @@ jobs:
           python -m earnings_analyzer \
             ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
 
+      - name: Alert on failure
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python scripts/send_alert.py
+
   trade_sheet:
     # The dedicated analyzer run at 14:30 UTC (~10:30 ET), after options open.
     if: github.event_name == 'schedule' && github.event.schedule == '30 14 * * 1-5'
@@ -148,6 +161,17 @@ jobs:
           restore-keys: |
             earnings-window-
 
+      # Persist the scorecard (suggestion log + graded outcomes). Shares the
+      # rolling state cache with the digest job; notified.json rides along
+      # unchanged.
+      - name: Persist scorecard state
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: earnings-state-${{ github.run_id }}
+          restore-keys: |
+            earnings-state-
+
       - name: Send earnings trade sheet
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -167,3 +191,16 @@ jobs:
           SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
           SCHWAB_TOKEN: ${{ secrets.SCHWAB_TOKEN }}
         run: python -m earnings_analyzer
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python scripts/send_alert.py

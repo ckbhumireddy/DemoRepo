@@ -149,6 +149,10 @@ class PricedStrategy:
     max_loss: Optional[float] = None
     breakevens: List[float] = field(default_factory=list)
     notes: str = ""
+    # Filled by backtest.attach_backtests: over the past reports, how often
+    # this exact structure would have finished profitable.
+    backtest_wins: Optional[int] = None
+    backtest_total: Optional[int] = None
 
     @property
     def is_credit(self) -> bool:
