@@ -89,7 +89,9 @@ def render_subject(events: List[EarningsEvent], today: dt.date, lead_days: int) 
     if n == 0:
         return f"S&P 500 earnings: nothing new within {lead_days} days"
     noun = "company" if n == 1 else "companies"
-    return f"S&P 500 earnings within {lead_days} days: {n} {noun}"
+    new = sum(1 for e in events if e.first_notice)
+    tail = f", {new} new" if 0 < new < n else ""
+    return f"S&P 500 earnings within {lead_days} days: {n} {noun}{tail}"
 
 
 def render_text(events: List[EarningsEvent], today: dt.date, lead_days: int) -> str:
@@ -106,7 +108,8 @@ def render_text(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
         days = e.days_until(today)
         flag = " (estimated)" if e.is_estimate else ""
         name = f"  {e.company}" if e.company else ""
-        lines.append(f"- {e.ticker:<6}{name}")
+        badge = "  [NEW]" if e.first_notice else ""
+        lines.append(f"- {e.ticker:<6}{name}{badge}")
         lines.append(f"    Reports {_weekday(e.date)}  (in {days} day(s)){flag}")
         lines.append(
             f"    Price {_fmt_price(e.price)}"
@@ -158,11 +161,17 @@ def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
             if e.company
             else ""
         )
+        badge = (
+            " <span style='background:#1a7f37;color:#fff;border-radius:4px;"
+            "padding:1px 6px;font-size:11px;font-weight:bold'>NEW</span>"
+            if e.first_notice
+            else ""
+        )
         title = (
             f"<div style='font-size:15px'>"
             f"<a href='{html.escape(_quote_url(e.ticker))}' "
             f"style='color:#0b57d0;text-decoration:none'>"
-            f"<b>{html.escape(e.ticker)}</b></a>{name}</div>"
+            f"<b>{html.escape(e.ticker)}</b></a>{badge}{name}</div>"
         )
         when = (
             f"<div style='margin-top:2px'>Reports <b>{html.escape(_weekday(e.date))}</b>"

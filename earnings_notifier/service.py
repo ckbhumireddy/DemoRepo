@@ -3,6 +3,7 @@ formatting, and notifier together into one run."""
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import logging
 from dataclasses import dataclass
@@ -32,7 +33,7 @@ class RunResult:
     total_tickers: int
     resolved: int
     in_window: List[EarningsEvent]   # everything within the look-ahead window
-    new_events: List[EarningsEvent]  # window minus already-notified (what we email)
+    new_events: List[EarningsEvent]  # events emailed for the first time (NEW badge)
     notified: bool                   # True if an email was actually sent
     subject: str
 
@@ -97,34 +98,43 @@ def run(
     if config.window_file:
         write_window_file(config.window_file, in_window, today, config.lead_days)
 
-    # De-duplicate against what we've already emailed so each earnings goes out
-    # only once, even though it stays in the window for several days. Dry runs
-    # skip the filter (and never write state below) so a preview always shows
-    # the full window, already-notified events included.
+    # The digest covers the WHOLE window on every run — a company repeats
+    # daily until its earnings day passes. State no longer suppresses events;
+    # it only marks which ones appear for the first time (the NEW badge).
+    # Dry runs skip the state read, so a preview marks everything as new.
     known: set = set()
     if config.use_state and not config.dry_run:
         known = load_state(config.state_file)
     new_events = [e for e in in_window if event_key(e) not in known]
-    suppressed = len(in_window) - len(new_events)
-    if suppressed:
-        logger.info("Suppressed %d already-notified event(s)", suppressed)
+    if new_events:
+        logger.info("%d event(s) appear for the first time", len(new_events))
 
     # Add company name, price, 52-week range, market cap, and last-earnings
-    # results — only for the few events actually going into the email — then
-    # order the digest by company size, biggest names first.
-    if new_events:
-        new_events = enrich_events(new_events, provider, max_workers=config.max_workers)
-        new_events = sort_by_market_cap(new_events)
+    # results, mark the first-time events, then order the digest by company
+    # size, biggest names first.
+    digest_events = in_window
+    if digest_events:
+        digest_events = enrich_events(
+            digest_events, provider, max_workers=config.max_workers
+        )
+        new_keys = {event_key(e) for e in new_events}
+        digest_events = [
+            dataclasses.replace(e, first_notice=event_key(e) in new_keys)
+            for e in digest_events
+        ]
+        digest_events = sort_by_market_cap(digest_events)
 
-    subject, text_body, html_body = render_email(new_events, today, config.lead_days)
+    subject, text_body, html_body = render_email(
+        digest_events, today, config.lead_days
+    )
 
-    # Skip the email entirely when nothing new is due (unless send_empty).
+    # Skip the email only when the window is empty (unless send_empty).
     sent = False
-    if new_events or config.send_empty:
+    if digest_events or config.send_empty:
         EmailNotifier(config).send(subject, text_body, html_body)
         sent = not config.dry_run
     else:
-        logger.info("Nothing new to report; no email sent")
+        logger.info("Window is empty; no email sent")
 
     # Record what we just notified — but never in dry-run (it would suppress
     # the real email later) and only if state is enabled.

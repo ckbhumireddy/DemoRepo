@@ -65,8 +65,9 @@ def test_service_appends_watchlist_tickers():
     assert {e.ticker for e in result.new_events} == {"AAPL", "NBIS"}
 
 
-def test_service_emails_each_earnings_only_once(tmp_path):
-    """Second run on a later day must not re-email the same earnings."""
+def test_service_emails_daily_until_earnings_day(tmp_path):
+    """The company repeats in every daily email until its earnings day; the
+    NEW badge appears only on the first day."""
     state_file = str(tmp_path / "notified.json")
     provider = _StaticProvider(
         {"NBIS": EarningsEvent("NBIS", dt.date(2026, 8, 12), True)}
@@ -88,13 +89,17 @@ def test_service_emails_each_earnings_only_once(tmp_path):
 
     svc.EmailNotifier = _FakeNotifier
     try:
-        # Day 1: NBIS is 4 days out -> emailed, state written.
+        # Day 1: NBIS is 4 days out -> emailed with the NEW badge.
         r1 = run(cfg, today=dt.date(2026, 8, 8), provider=provider, tickers=["NBIS"])
-        # Day 2: NBIS now 3 days out, still in window, but already notified.
+        # Day 2: still in the window -> emailed again, no longer new.
         r2 = run(cfg, today=dt.date(2026, 8, 9), provider=provider, tickers=["NBIS"])
+        # Day after the report: out of the window -> no email.
+        r3 = run(cfg, today=dt.date(2026, 8, 13), provider=provider, tickers=["NBIS"])
     finally:
         svc.EmailNotifier = EmailNotifier
 
     assert [e.ticker for e in r1.new_events] == ["NBIS"]
-    assert r2.new_events == []          # suppressed the second day
-    assert _CountingNotifier.sent == 1  # exactly one email across both runs
+    assert r2.new_events == []                 # second day: not new anymore
+    assert r2.notified is True                 # ...but still emailed
+    assert r3.in_window == []                  # earnings day has passed
+    assert _CountingNotifier.sent == 2         # day 1 + day 2, not day 3

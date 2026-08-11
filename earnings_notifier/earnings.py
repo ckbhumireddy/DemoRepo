@@ -36,6 +36,7 @@ class EarningsEvent:
     last_eps_actual: Optional[float] = None
     last_surprise_pct: Optional[float] = None
     last_reaction_pct: Optional[float] = None  # price move across the report
+    first_notice: bool = False  # True the first time this event is emailed
 
     def days_until(self, today: dt.date) -> int:
         return (self.date - today).days

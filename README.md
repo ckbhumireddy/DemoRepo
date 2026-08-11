@@ -1,7 +1,8 @@
 # S&P 500 Earnings Notifier
 
-Emails you a digest of **S&P 500 companies reporting earnings within the next
-week**, once per company, so you have time to prepare. Runs automatically every
+Emails you a daily digest of **S&P 500 companies reporting earnings within the
+next week**. Each company stays in the digest every day until its earnings day
+passes; a NEW badge marks its first appearance. Runs automatically every
 weekday via GitHub Actions — no server to maintain.
 
 ## How it works
@@ -13,11 +14,11 @@ weekday via GitHub Actions — no server to maintain.
    Finance (via `yfinance`).
 3. **Selection** — keeps the companies whose earnings fall **within the next
    `LEAD_DAYS`** (default **7**) days (from `MIN_DAYS`, default today).
-4. **De-duplicate** — remembers which `(ticker, date)` pairs have already been
-   emailed (small JSON state file), so each earnings goes out **exactly once**
-   even though it stays inside the window for several days.
-5. **Notify** — if anything new is due, renders a plain-text + HTML digest and
-   emails it over SMTP (otherwise sends nothing).
+4. **Mark what is new** — remembers which `(ticker, date)` pairs were already
+   emailed (small JSON state file) and gives first-time events a **NEW** badge.
+   The company itself repeats in the digest daily until its earnings day.
+5. **Notify** — when the window is not empty, renders a plain-text + HTML
+   digest and emails it over SMTP (otherwise sends nothing).
 
 ```
 earnings_notifier/
