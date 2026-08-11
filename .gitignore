@@ -11,3 +11,6 @@ venv/
 
 # Local once-only notification state (persisted via Actions cache in CI)
 state/
+
+# Schwab OAuth token written by scripts/schwab_auth.py — never commit
+schwab_token.json
