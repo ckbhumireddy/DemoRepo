@@ -68,14 +68,23 @@ def test_resolve_entries_from_window_file(tmp_path):
     write_window_file(
         path,
         [
-            EarningsEvent("RICHCO", TODAY + dt.timedelta(days=3)),
+            EarningsEvent("RICHCO", TODAY + dt.timedelta(days=3), timing="pre-market"),
             EarningsEvent("STALE", TODAY - dt.timedelta(days=1)),  # already passed
         ],
         TODAY,
         7,
     )
     entries = resolve_entries(_config(window_file=path), TODAY)
-    assert entries == [("RICHCO", TODAY + dt.timedelta(days=3))]
+    assert entries == [("RICHCO", TODAY + dt.timedelta(days=3), "pre-market")]
+
+
+def test_timing_flows_from_entries_to_analysis():
+    provider, entries = build_demo_provider(TODAY)
+    entries = [(t, d, "after-market") for t, d in entries]
+    result = run_analyzer(
+        _config(), today=TODAY, provider=provider, entries=entries
+    )
+    assert all(a.timing == "after-market" for a in result.analyses)
 
 
 def test_failed_ticker_does_not_kill_the_run():

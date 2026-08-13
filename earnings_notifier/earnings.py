@@ -37,6 +37,7 @@ class EarningsEvent:
     last_surprise_pct: Optional[float] = None
     last_reaction_pct: Optional[float] = None  # price move across the report
     first_notice: bool = False  # True the first time this event is emailed
+    timing: Optional[str] = None  # "pre-market" | "after-market" | None (unknown)
 
     def days_until(self, today: dt.date) -> int:
         return (self.date - today).days
@@ -208,16 +209,18 @@ class YFinanceProvider:
             # The same table carries past rows with reported results — capture
             # the most recent one so the digest can say how last quarter went.
             last = _last_reported_earnings(df, today)
-            future_dates = []
+            future = []
             for idx in df.index:
                 d = _to_date(idx)
                 if d is not None and d >= today:
-                    future_dates.append(d)
-            if future_dates:
+                    future.append((d, idx))
+            if future:
+                best_date, best_idx = min(future, key=lambda pair: pair[0])
                 return EarningsEvent(
                     ticker=ticker,
-                    date=min(future_dates),
+                    date=best_date,
                     is_estimate=True,
+                    timing=_classify_timing(best_idx),
                     **last,
                 )
 
@@ -303,6 +306,44 @@ class YFinanceProvider:
                 updates["last_reaction_pct"] = reaction
 
         return dataclasses.replace(event, **updates) if updates else event
+
+
+def _classify_timing(value) -> Optional[str]:
+    """Classify an earnings timestamp as "pre-market" or "after-market".
+
+    Yahoo's earnings-dates table carries a US/Eastern time of day (07:00 for
+    a pre-market report, 16:05 for an after-market one). Reports before the
+    09:30 ET open are "pre-market"; reports at or after the 16:00 ET close
+    are "after-market". A midnight timestamp means Yahoo only knows the date,
+    and an in-session time is ambiguous — both return ``None`` (unknown).
+    """
+    ts: Optional[dt.datetime] = None
+    if isinstance(value, dt.datetime):
+        ts = value
+    else:
+        to_pydatetime = getattr(value, "to_pydatetime", None)
+        if callable(to_pydatetime):
+            try:
+                ts = to_pydatetime()
+            except Exception:  # noqa: BLE001
+                return None
+    if ts is None:
+        return None
+    if ts.tzinfo is not None:
+        try:
+            from zoneinfo import ZoneInfo
+
+            ts = ts.astimezone(ZoneInfo("America/New_York"))
+        except Exception:  # noqa: BLE001 - unknown tz database entry
+            return None
+    t = ts.time()
+    if t == dt.time(0, 0):
+        return None  # date-only row; the time of day is unknown
+    if t < dt.time(9, 30):
+        return "pre-market"
+    if t >= dt.time(16, 0):
+        return "after-market"
+    return None
 
 
 def _to_date(value) -> Optional[dt.date]:
