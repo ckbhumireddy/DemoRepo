@@ -222,7 +222,10 @@ def render_text(
         name = f"  {a.snapshot.company}" if a.snapshot and a.snapshot.company else ""
         days = (a.event_date - today).days
         lines.append(f"- [{grade} {score}] {a.ticker}{name}")
-        lines.append(f"    Reports {_weekday(a.event_date)}  (in {days} day(s))")
+        timing = f" · {a.timing}" if a.timing else ""
+        lines.append(
+            f"    Reports {_weekday(a.event_date)}{timing}  (in {days} day(s))"
+        )
         snap = a.snapshot
         lines.append(
             f"    Price {_fmt_price(a.price)}"
@@ -318,9 +321,10 @@ def _card(a: TickerAnalysis, today: dt.date) -> str:
         if snap and snap.forward_pe is not None
         else ""
     )
+    timing = f" &middot; <b>{html.escape(a.timing)}</b>" if a.timing else ""
     rows = [
         f"<div style='margin-top:2px'>Reports <b>{html.escape(_weekday(a.event_date))}</b>"
-        f" &middot; in {days} day(s)</div>",
+        f"{timing} &middot; in {days} day(s)</div>",
         f"<div style='margin-top:6px'>Price <b>{html.escape(_fmt_price(a.price))}</b>"
         f" &nbsp;&middot;&nbsp; Mkt cap "
         f"<b>{html.escape(_fmt_market_cap(snap.market_cap if snap else None))}</b>"

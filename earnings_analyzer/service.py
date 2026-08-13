@@ -19,7 +19,9 @@ from .provider import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
-Entry = Tuple[str, dt.date]  # (ticker, earnings date)
+# (ticker, earnings date) — an optional third element carries the report
+# timing ("pre-market" / "after-market" / None); plain 2-tuples still work.
+Entry = Tuple[str, dt.date]
 
 
 @dataclass
@@ -49,16 +51,18 @@ def resolve_entries(
         for ticker in tickers:
             event = provider.next_earnings_date(ticker)
             if event is not None:
-                entries.append((event.ticker, event.date))
+                entries.append((event.ticker, event.date, event.timing))
             else:
                 logger.warning("No upcoming earnings date found for %s", ticker)
         return entries
 
     window = read_window_file(config.window_file)
     if window is not None:
-        entries = [(e["ticker"], e["date"]) for e in window["events"]]
+        entries = [
+            (e["ticker"], e["date"], e.get("timing")) for e in window["events"]
+        ]
         # Keep only events still in the future window (a stale file is safe).
-        entries = [(t, d) for t, d in entries if d >= today]
+        entries = [entry for entry in entries if entry[1] >= today]
         logger.info(
             "Loaded %d entr(ies) from window file %s",
             len(entries),
@@ -87,7 +91,7 @@ def resolve_entries(
     selected = select_for_notification(
         events, today, lead_days=config.lead_days, min_days=config.min_days
     )
-    return [(e.ticker, e.date) for e in selected]
+    return [(e.ticker, e.date, e.timing) for e in selected]
 
 
 def run_analyzer(
@@ -121,12 +125,16 @@ def run_analyzer(
     logger.info("Analyzing %d earnings setup(s)...", len(entries))
 
     def _one(entry: Entry) -> Optional[TickerAnalysis]:
-        ticker, event_date = entry
+        ticker, event_date = entry[0], entry[1]
+        timing = entry[2] if len(entry) > 2 else None
         try:
-            return analyze_ticker(ticker, event_date, provider, config, today)
+            analysis = analyze_ticker(ticker, event_date, provider, config, today)
         except Exception as exc:  # noqa: BLE001 - one ticker never kills the run
             logger.warning("Analysis failed for %s: %s", ticker, exc)
             return None
+        if analysis is not None:
+            analysis.timing = timing
+        return analysis
 
     analyses: List[TickerAnalysis] = []
     if entries:

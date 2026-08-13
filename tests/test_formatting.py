@@ -60,6 +60,22 @@ def test_text_lists_days_until():
     assert "in 7 day(s)" in text
 
 
+def test_timing_shown_when_known():
+    events = [
+        EarningsEvent("AAPL", dt.date(2026, 8, 11), True, timing="after-market"),
+        EarningsEvent("NVDA", dt.date(2026, 8, 11), False, timing="pre-market"),
+    ]
+    text = render_text(events, TODAY, 7)
+    html = render_html(events, TODAY, 7)
+    assert "· after-market" in text and "· pre-market" in text
+    assert "<b>after-market</b>" in html and "<b>pre-market</b>" in html
+
+
+def test_timing_hidden_when_unknown():
+    text = render_text(_events(), TODAY, 7)
+    assert "pre-market" not in text and "after-market" not in text
+
+
 def test_html_marks_estimated_and_confirmed():
     html = render_html(_events(), TODAY, 7)
     assert "estimated" in html

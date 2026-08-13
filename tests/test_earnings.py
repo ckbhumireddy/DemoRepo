@@ -4,6 +4,7 @@ from earnings_notifier.earnings import (
     EarningsEvent,
     YFinanceProvider,
     _as_float,
+    _classify_timing,
     _last_reported_earnings,
     _post_earnings_move,
     collect_upcoming,
@@ -51,6 +52,43 @@ def test_empty_when_nothing_in_window():
 
 def test_days_until():
     assert _ev("X", 7).days_until(TODAY) == 7
+
+
+def _et(hour, minute=0):
+    from zoneinfo import ZoneInfo
+
+    return dt.datetime(
+        2026, 8, 12, hour, minute, tzinfo=ZoneInfo("America/New_York")
+    )
+
+
+def test_classify_timing_pre_market():
+    assert _classify_timing(_et(7)) == "pre-market"
+    assert _classify_timing(_et(9, 29)) == "pre-market"
+
+
+def test_classify_timing_after_market():
+    assert _classify_timing(_et(16)) == "after-market"
+    assert _classify_timing(_et(20, 5)) == "after-market"
+
+
+def test_classify_timing_unknown():
+    assert _classify_timing(_et(0)) is None       # date-only timestamp
+    assert _classify_timing(_et(12)) is None      # in-session, ambiguous
+    assert _classify_timing(None) is None
+    assert _classify_timing("2026-08-12") is None
+
+
+def test_classify_timing_converts_timezone():
+    from zoneinfo import ZoneInfo
+
+    # 21:00 UTC == 17:00 ET during daylight saving time.
+    ts = dt.datetime(2026, 8, 12, 21, 0, tzinfo=ZoneInfo("UTC"))
+    assert _classify_timing(ts) == "after-market"
+
+
+def test_classify_timing_naive_is_treated_as_eastern():
+    assert _classify_timing(dt.datetime(2026, 8, 12, 8, 0)) == "pre-market"
 
 
 class _FlakyProvider:

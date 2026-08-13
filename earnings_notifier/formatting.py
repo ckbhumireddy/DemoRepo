@@ -107,10 +107,13 @@ def render_text(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
     for e in events:
         days = e.days_until(today)
         flag = " (estimated)" if e.is_estimate else ""
+        timing = f" · {e.timing}" if e.timing else ""
         name = f"  {e.company}" if e.company else ""
         badge = "  [NEW]" if e.first_notice else ""
         lines.append(f"- {e.ticker:<6}{name}{badge}")
-        lines.append(f"    Reports {_weekday(e.date)}  (in {days} day(s)){flag}")
+        lines.append(
+            f"    Reports {_weekday(e.date)}{timing}  (in {days} day(s)){flag}"
+        )
         lines.append(
             f"    Price {_fmt_price(e.price)}"
             f" | 52wk {_fmt_range(e.fifty_two_week_low, e.fifty_two_week_high)}"
@@ -173,9 +176,12 @@ def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
             f"style='color:#0b57d0;text-decoration:none'>"
             f"<b>{html.escape(e.ticker)}</b></a>{badge}{name}</div>"
         )
+        timing = (
+            f" &middot; <b>{html.escape(e.timing)}</b>" if e.timing else ""
+        )
         when = (
             f"<div style='margin-top:2px'>Reports <b>{html.escape(_weekday(e.date))}</b>"
-            f" &middot; in {days} day(s) &middot; {flag}</div>"
+            f"{timing} &middot; in {days} day(s) &middot; {flag}</div>"
         )
         stats = (
             f"<div style='margin-top:6px'>"

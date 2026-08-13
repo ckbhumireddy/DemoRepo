@@ -41,6 +41,21 @@ def test_text_card_contents(analyses):
     assert "not investment advice" in text
 
 
+def test_timing_shown_when_known(analyses):
+    import dataclasses
+
+    timed = [dataclasses.replace(a, timing="after-market") for a in analyses]
+    text = render_text(timed, TODAY)
+    html = render_html(timed, TODAY)
+    assert "· after-market" in text
+    assert "after-market" in html
+
+
+def test_timing_hidden_when_unknown(analyses):
+    text = render_text(analyses, TODAY)
+    assert "pre-market" not in text and "after-market" not in text
+
+
 def test_html_card_contents(analyses):
     html = render_html(analyses, TODAY)
     assert "Iron condor" in html

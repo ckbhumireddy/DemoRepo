@@ -12,7 +12,7 @@ TODAY = dt.date(2026, 8, 4)
 def test_round_trip(tmp_path):
     path = str(tmp_path / "out" / "window.json")
     events = [
-        EarningsEvent("AAPL", dt.date(2026, 8, 11), True),
+        EarningsEvent("AAPL", dt.date(2026, 8, 11), True, timing="after-market"),
         EarningsEvent("NVDA", dt.date(2026, 8, 10), False),
     ]
     write_window_file(path, events, TODAY, 7)
@@ -20,9 +20,37 @@ def test_round_trip(tmp_path):
     assert data["today"] == TODAY
     assert data["lead_days"] == 7
     assert data["events"] == [
-        {"ticker": "AAPL", "date": dt.date(2026, 8, 11), "is_estimate": True},
-        {"ticker": "NVDA", "date": dt.date(2026, 8, 10), "is_estimate": False},
+        {
+            "ticker": "AAPL",
+            "date": dt.date(2026, 8, 11),
+            "is_estimate": True,
+            "timing": "after-market",
+        },
+        {
+            "ticker": "NVDA",
+            "date": dt.date(2026, 8, 10),
+            "is_estimate": False,
+            "timing": None,
+        },
     ]
+
+
+def test_read_tolerates_missing_timing(tmp_path):
+    """Window files written before the timing field must still load."""
+    path = str(tmp_path / "window.json")
+    write_window_file(
+        path, [EarningsEvent("AAPL", dt.date(2026, 8, 11), True)], TODAY, 7
+    )
+    import json
+
+    with open(path, "r", encoding="utf-8") as fh:
+        raw = json.load(fh)
+    for e in raw["events"]:
+        del e["timing"]
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(raw, fh)
+    data = read_window_file(path)
+    assert data["events"][0]["timing"] is None
 
 
 def test_missing_file_returns_none(tmp_path):

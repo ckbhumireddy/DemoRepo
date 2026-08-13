@@ -248,6 +248,7 @@ class TickerAnalysis:
 
     ticker: str
     event_date: dt.date
+    timing: Optional[str] = None  # "pre-market" | "after-market" | None
     price: Optional[float] = None
     snapshot: Optional[Snapshot] = None
     history: Optional[EarningsHistoryStats] = None

@@ -36,6 +36,7 @@ def write_window_file(
                 "ticker": e.ticker,
                 "date": e.date.isoformat(),
                 "is_estimate": e.is_estimate,
+                "timing": e.timing,
             }
             for e in events
         ],
@@ -67,6 +68,7 @@ def read_window_file(path: str) -> Optional[dict]:
                 "ticker": str(e["ticker"]),
                 "date": dt.date.fromisoformat(e["date"]),
                 "is_estimate": bool(e.get("is_estimate", True)),
+                "timing": str(e["timing"]) if e.get("timing") else None,
             }
             for e in data.get("events", [])
         ]
