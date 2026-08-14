@@ -46,13 +46,6 @@ class AnalyzerConfig(Config):
     # cache persists it between runs. Empty disables the scorecard.
     scorecard_file: str = "state/scorecard.json"
 
-    # Paper trader: opens the sheet's suggested strategies before earnings
-    # and closes them after. Same state/ cache; empty file disables it.
-    paper_file: str = "state/paper.json"
-    paper_start_balance: float = 25000.0
-    paper_max_risk: float = 5000.0     # max capital at risk per position
-    paper_min_grade: str = "B"         # minimum rating grade to enter
-
     # Charles Schwab Trader API (optional). When all three are set, quotes,
     # chains, and price history come from Schwab in real time, with Yahoo as
     # automatic fallback. See scripts/schwab_auth.py for the token.
@@ -78,10 +71,6 @@ class AnalyzerConfig(Config):
             scorecard_file=os.environ.get(
                 "SCORECARD_FILE", "state/scorecard.json"
             ).strip(),
-            paper_file=os.environ.get("PAPER_FILE", "state/paper.json").strip(),
-            paper_start_balance=_get_float("PAPER_START_BALANCE", 25000.0),
-            paper_max_risk=_get_float("PAPER_MAX_RISK", 5000.0),
-            paper_min_grade=os.environ.get("PAPER_MIN_GRADE", "B").strip().upper(),
             schwab_app_key=os.environ.get("SCHWAB_APP_KEY", "").strip(),
             schwab_app_secret=os.environ.get("SCHWAB_APP_SECRET", "").strip(),
             schwab_token=os.environ.get("SCHWAB_TOKEN", "").strip(),
