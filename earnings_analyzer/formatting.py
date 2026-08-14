@@ -210,8 +210,42 @@ def _scorecard_lines(scorecard) -> List[str]:
     return lines
 
 
+def _paper_lines(paper) -> List[str]:
+    """Plain-text paper-portfolio block; empty list when nothing to show."""
+    if paper is None:
+        return []
+    idle = (
+        not paper.open_positions
+        and not paper.closed_this_run
+        and paper.closed_total == 0
+    )
+    if idle and paper.balance == paper.start_balance:
+        return []
+    lines = [
+        f"Paper portfolio (${paper.start_balance:,.0f} start):",
+        f"  Balance ${paper.balance:,.2f} ({paper.total_pnl:+,.2f})"
+        + (
+            f" · {paper.wins} wins · {paper.losses} losses"
+            f" · {paper.win_rate * 100:.0f}% win rate"
+            if paper.closed_total
+            else ""
+        ),
+    ]
+    for p in paper.closed_this_run:
+        lines.append(
+            f"  CLOSED {p['ticker']} {p['strategy']} x{p['qty']}"
+            f" ({p['event_date']}): {p['realized_pnl']:+,.2f}"
+        )
+    for p in paper.open_positions:
+        lines.append(
+            f"  OPEN {p['ticker']} {p['strategy']} x{p['qty']}"
+            f" (reports {p['event_date']}, risk ${p['risk_dollars']:,.0f})"
+        )
+    return lines
+
+
 def render_text(
-    analyses: List[TickerAnalysis], today: dt.date, scorecard=None
+    analyses: List[TickerAnalysis], today: dt.date, scorecard=None, paper=None
 ) -> str:
     lines = [
         "Earnings trade sheet",
@@ -220,10 +254,10 @@ def render_text(
     ]
     if not analyses:
         lines.append("No upcoming earnings to analyze.")
-        score_block = _scorecard_lines(scorecard)
-        if score_block:
-            lines.append("")
-            lines.extend(score_block)
+        for block in (_scorecard_lines(scorecard), _paper_lines(paper)):
+            if block:
+                lines.append("")
+                lines.extend(block)
         return "\n".join(lines)
 
     for a in analyses:
@@ -264,10 +298,10 @@ def render_text(
         lines.append("")
 
     lines.append(f"{len(analyses)} setup(s) analyzed.")
-    score_block = _scorecard_lines(scorecard)
-    if score_block:
-        lines.append("")
-        lines.extend(score_block)
+    for block in (_scorecard_lines(scorecard), _paper_lines(paper)):
+        if block:
+            lines.append("")
+            lines.extend(block)
     lines.append("")
     lines.append(
         "Educational analysis only — not investment advice. Quotes are Yahoo "
@@ -281,7 +315,7 @@ def render_text(
 # HTML (stacked cards, matching the calendar digest style)
 # --------------------------------------------------------------------------- #
 def render_html(
-    analyses: List[TickerAnalysis], today: dt.date, scorecard=None
+    analyses: List[TickerAnalysis], today: dt.date, scorecard=None, paper=None
 ) -> str:
     header = (
         "<h2 style='margin:0 0 4px'>Earnings trade sheet</h2>"
@@ -292,6 +326,7 @@ def render_html(
     else:
         body = "".join(_card(a, today) for a in analyses)
     body += _scorecard_html(scorecard)
+    body += _paper_html(paper)
 
     footer = (
         "<p style='margin-top:16px;color:#777;font-size:12px'>"
@@ -415,12 +450,59 @@ def _scorecard_html(scorecard) -> str:
     )
 
 
+def _paper_html(paper) -> str:
+    """HTML paper-portfolio card matching the scorecard card style."""
+    if paper is None:
+        return ""
+    idle = (
+        not paper.open_positions
+        and not paper.closed_this_run
+        and paper.closed_total == 0
+    )
+    if idle and paper.balance == paper.start_balance:
+        return ""
+    title = "<div style='font-size:15px'><b>Paper portfolio</b></div>"
+    pnl_color = GREEN if paper.total_pnl >= 0 else RED
+    stats = (
+        f" &middot; {paper.wins} wins &middot; {paper.losses} losses"
+        f" &middot; <b>{paper.win_rate * 100:.0f}% win rate</b>"
+        if paper.closed_total
+        else ""
+    )
+    rows = [
+        f"<div style='margin-top:4px'>Balance <b>${paper.balance:,.2f}</b>"
+        f" <span style='color:{pnl_color}'>({paper.total_pnl:+,.2f})</span>"
+        f"{stats}</div>"
+    ]
+    for p in paper.closed_this_run:
+        color = GREEN if (p["realized_pnl"] or 0) > 0 else RED
+        rows.append(
+            f"<div style='margin-top:2px;color:#444'>"
+            f"<span style='color:{color};font-weight:bold'>CLOSED</span> "
+            f"{html.escape(p['ticker'])} {html.escape(p['strategy'])} "
+            f"x{p['qty']} ({html.escape(p['event_date'])}): "
+            f"<span style='color:{color}'>{p['realized_pnl']:+,.2f}</span></div>"
+        )
+    for p in paper.open_positions:
+        rows.append(
+            f"<div style='margin-top:2px;color:#444'><b>OPEN</b> "
+            f"{html.escape(p['ticker'])} {html.escape(p['strategy'])} "
+            f"x{p['qty']} (reports {html.escape(p['event_date'])}, "
+            f"risk ${p['risk_dollars']:,.0f})</div>"
+        )
+    return (
+        "<div style='border:1px solid #d0d0d0;border-radius:8px;"
+        "padding:10px 14px;margin:0 0 10px;background:#fafafa'>"
+        + title + "".join(rows) + "</div>"
+    )
+
+
 def render_email(
-    analyses: List[TickerAnalysis], today: dt.date, scorecard=None
+    analyses: List[TickerAnalysis], today: dt.date, scorecard=None, paper=None
 ) -> Tuple[str, str, str]:
     """Return ``(subject, text_body, html_body)``."""
     return (
         render_subject(analyses, today),
-        render_text(analyses, today, scorecard=scorecard),
-        render_html(analyses, today, scorecard=scorecard),
+        render_text(analyses, today, scorecard=scorecard, paper=paper),
+        render_html(analyses, today, scorecard=scorecard, paper=paper),
     )
