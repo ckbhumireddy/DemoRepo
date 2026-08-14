@@ -41,6 +41,16 @@ def _fmt_market_cap(value: float | None) -> str:
     return f"${value:,.0f}"
 
 
+def _fmt_short_interest(e: EarningsEvent) -> str | None:
+    """"Short 3.7% of float (4.3d to cover)", or None when unavailable."""
+    if e.short_pct_float is None:
+        return None
+    line = f"Short {e.short_pct_float * 100:.1f}% of float"
+    if e.short_ratio is not None:
+        line += f" ({e.short_ratio:.1f}d to cover)"
+    return line
+
+
 def _surprise_pct(e: EarningsEvent) -> float | None:
     """Last quarter's earnings surprise, computed from EPS if Yahoo omits it."""
     if e.last_surprise_pct is not None:
@@ -114,10 +124,12 @@ def render_text(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
         lines.append(
             f"    Reports {_weekday(e.date)}{timing}  (in {days} day(s)){flag}"
         )
+        short = _fmt_short_interest(e)
         lines.append(
             f"    Price {_fmt_price(e.price)}"
             f" | 52wk {_fmt_range(e.fifty_two_week_low, e.fifty_two_week_high)}"
             f" | Mkt cap {_fmt_market_cap(e.market_cap)}"
+            + (f" | {short}" if short else "")
         )
         last = _last_earnings_text(e)
         reaction = _reaction_text(e.last_reaction_pct)
@@ -183,13 +195,17 @@ def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
             f"<div style='margin-top:2px'>Reports <b>{html.escape(_weekday(e.date))}</b>"
             f"{timing} &middot; in {days} day(s) &middot; {flag}</div>"
         )
+        short = _fmt_short_interest(e)
+        short_html = (
+            f" &nbsp;&middot;&nbsp; {html.escape(short)}" if short else ""
+        )
         stats = (
             f"<div style='margin-top:6px'>"
             f"Price <b>{html.escape(_fmt_price(e.price))}</b>"
             f" &nbsp;&middot;&nbsp; 52wk "
             f"{html.escape(_fmt_range(e.fifty_two_week_low, e.fifty_two_week_high))}"
             f" &nbsp;&middot;&nbsp; Mkt cap "
-            f"<b>{html.escape(_fmt_market_cap(e.market_cap))}</b></div>"
+            f"<b>{html.escape(_fmt_market_cap(e.market_cap))}</b>{short_html}</div>"
         )
         last = _last_earnings_text(e)
         last_html = ""

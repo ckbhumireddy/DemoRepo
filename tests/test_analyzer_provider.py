@@ -74,7 +74,16 @@ def test_snapshot_from_info():
     )
     assert snap.company == "Apple Inc."
     assert snap.market_cap == 3.41e12
+    assert snap.short_pct_float is None
     assert snapshot_from_info({}) is None
+
+
+def test_snapshot_from_info_short_interest():
+    snap = snapshot_from_info(
+        {"longName": "Target", "shortPercentOfFloat": 0.0369, "shortRatio": 4.3}
+    )
+    assert snap.short_pct_float == 0.0369
+    assert snap.short_ratio == 4.3
 
 
 def test_in_memory_provider_round_trip():

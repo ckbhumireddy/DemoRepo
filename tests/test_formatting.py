@@ -76,6 +76,24 @@ def test_timing_hidden_when_unknown():
     assert "pre-market" not in text and "after-market" not in text
 
 
+def test_short_interest_shown_when_known():
+    events = [
+        EarningsEvent(
+            "TGT", dt.date(2026, 8, 19), True,
+            short_pct_float=0.0369, short_ratio=4.3,
+        ),
+    ]
+    text = render_text(events, TODAY, 7)
+    html = render_html(events, TODAY, 7)
+    assert "Short 3.7% of float (4.3d to cover)" in text
+    assert "Short 3.7% of float (4.3d to cover)" in html
+
+
+def test_short_interest_hidden_when_unknown():
+    text = render_text(_events(), TODAY, 7)
+    assert "Short" not in text
+
+
 def test_html_marks_estimated_and_confirmed():
     html = render_html(_events(), TODAY, 7)
     assert "estimated" in html
