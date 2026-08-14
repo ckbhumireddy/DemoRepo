@@ -232,6 +232,8 @@ class Snapshot:
     profit_margin: Optional[float] = None
     fifty_two_week_low: Optional[float] = None
     fifty_two_week_high: Optional[float] = None
+    short_pct_float: Optional[float] = None  # 0.037 = 3.7% of float sold short
+    short_ratio: Optional[float] = None      # days to cover at avg volume
 
 
 @dataclass(frozen=True)

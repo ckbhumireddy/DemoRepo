@@ -56,6 +56,30 @@ def test_timing_hidden_when_unknown(analyses):
     assert "pre-market" not in text and "after-market" not in text
 
 
+def test_short_interest_shown_when_known(analyses):
+    import dataclasses
+
+    shorted = [
+        dataclasses.replace(
+            a,
+            snapshot=dataclasses.replace(
+                a.snapshot, short_pct_float=0.21, short_ratio=6.5
+            ),
+        )
+        for a in analyses
+        if a.snapshot is not None
+    ]
+    text = render_text(shorted, TODAY)
+    html = render_html(shorted, TODAY)
+    assert "Short 21.0% of float (6.5d to cover)" in text
+    assert "Short 21.0% of float (6.5d to cover)" in html
+
+
+def test_short_interest_hidden_when_unknown(analyses):
+    text = render_text(analyses, TODAY)
+    assert "of float" not in text
+
+
 def test_html_card_contents(analyses):
     html = render_html(analyses, TODAY)
     assert "Iron condor" in html

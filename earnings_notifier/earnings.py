@@ -38,6 +38,8 @@ class EarningsEvent:
     last_reaction_pct: Optional[float] = None  # price move across the report
     first_notice: bool = False  # True the first time this event is emailed
     timing: Optional[str] = None  # "pre-market" | "after-market" | None (unknown)
+    short_pct_float: Optional[float] = None  # 0.037 = 3.7% of float sold short
+    short_ratio: Optional[float] = None      # days to cover at avg volume
 
     def days_until(self, today: dt.date) -> int:
         return (self.date - today).days
@@ -260,6 +262,8 @@ class YFinanceProvider:
             ("fifty_two_week_low", ("fiftyTwoWeekLow",)),
             ("fifty_two_week_high", ("fiftyTwoWeekHigh",)),
             ("market_cap", ("marketCap",)),
+            ("short_pct_float", ("shortPercentOfFloat",)),
+            ("short_ratio", ("shortRatio",)),
         ):
             for key in keys:
                 value = _as_float(info.get(key))

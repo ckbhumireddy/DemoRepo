@@ -130,6 +130,8 @@ def snapshot_from_info(info: dict) -> Optional[Snapshot]:
         profit_margin=_as_float(info.get("profitMargins")),
         fifty_two_week_low=_as_float(info.get("fiftyTwoWeekLow")),
         fifty_two_week_high=_as_float(info.get("fiftyTwoWeekHigh")),
+        short_pct_float=_as_float(info.get("shortPercentOfFloat")),
+        short_ratio=_as_float(info.get("shortRatio")),
     )
 
 

@@ -42,6 +42,16 @@ def _fmt_price(value: Optional[float]) -> str:
     return "—" if value is None else f"${value:,.2f}"
 
 
+def _fmt_short_interest(snap) -> Optional[str]:
+    """"Short 3.7% of float (4.3d to cover)", or None when unavailable."""
+    if snap is None or snap.short_pct_float is None:
+        return None
+    line = f"Short {snap.short_pct_float * 100:.1f}% of float"
+    if snap.short_ratio is not None:
+        line += f" ({snap.short_ratio:.1f}d to cover)"
+    return line
+
+
 def _fmt_market_cap(value: Optional[float]) -> str:
     if value is None:
         return "—"
@@ -227,6 +237,7 @@ def render_text(
             f"    Reports {_weekday(a.event_date)}{timing}  (in {days} day(s))"
         )
         snap = a.snapshot
+        short = _fmt_short_interest(snap)
         lines.append(
             f"    Price {_fmt_price(a.price)}"
             f" | Mkt cap {_fmt_market_cap(snap.market_cap if snap else None)}"
@@ -235,6 +246,7 @@ def render_text(
                 if snap and snap.forward_pe is not None
                 else ""
             )
+            + (f" | {short}" if short else "")
         )
         for line in (
             _history_line(a), _reaction_line(a), _vol_line(a), _liquidity_line(a)
@@ -322,13 +334,15 @@ def _card(a: TickerAnalysis, today: dt.date) -> str:
         else ""
     )
     timing = f" &middot; <b>{html.escape(a.timing)}</b>" if a.timing else ""
+    short = _fmt_short_interest(snap)
+    short_html = f" &nbsp;&middot;&nbsp; {html.escape(short)}" if short else ""
     rows = [
         f"<div style='margin-top:2px'>Reports <b>{html.escape(_weekday(a.event_date))}</b>"
         f"{timing} &middot; in {days} day(s)</div>",
         f"<div style='margin-top:6px'>Price <b>{html.escape(_fmt_price(a.price))}</b>"
         f" &nbsp;&middot;&nbsp; Mkt cap "
         f"<b>{html.escape(_fmt_market_cap(snap.market_cap if snap else None))}</b>"
-        f"{fwd_pe}</div>",
+        f"{fwd_pe}{short_html}</div>",
     ]
     for line in (_history_line(a), _reaction_line(a), _vol_line(a)):
         if line:
