@@ -163,6 +163,35 @@ def test_missing_window_still_sends_plan(tmp_path, monkeypatch):
     assert RecordingNotifier.sent[0].startswith("[Paper] Daily plan")
 
 
+def test_plan_email_sent_once_per_day(tmp_path, monkeypatch):
+    """External trigger + cron fallback both run morning: one plan email."""
+    _patch_notifier(monkeypatch)
+    cfg = _config(tmp_path)
+    first = run_trader(cfg, "morning", today=TODAY, now=NOW,
+                       provider=_provider(), window=_window([]))
+    second = run_trader(cfg, "morning", today=TODAY, now=NOW,
+                        provider=_provider(), window=_window([]))
+    assert first.emails_sent == 1
+    assert second.emails_sent == 0
+    assert len(RecordingNotifier.sent) == 1
+
+    # A new day sends again.
+    third = run_trader(cfg, "morning", today=TODAY + dt.timedelta(days=1),
+                       now=NOW + dt.timedelta(days=1),
+                       provider=_provider(), window=_window([]))
+    assert third.emails_sent == 1
+
+
+def test_dry_run_does_not_mark_plan_sent(tmp_path, monkeypatch):
+    _patch_notifier(monkeypatch)
+    cfg = _config(tmp_path)
+    run_trader(_config(tmp_path, dry_run=True), "morning", today=TODAY,
+               now=NOW, provider=_provider(), window=_window([]))
+    result = run_trader(cfg, "morning", today=TODAY, now=NOW,
+                        provider=_provider(), window=_window([]))
+    assert result.emails_sent == 1  # the real run still sends
+
+
 def test_empty_ledger_file_disables_trading(tmp_path, monkeypatch):
     _patch_notifier(monkeypatch)
     cfg = _config(tmp_path)

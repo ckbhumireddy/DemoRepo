@@ -1,15 +1,18 @@
 name: Earnings paper trader
 
-# Two weekday phases (cron is UTC; GitHub starts scheduled runs 55-75
-# minutes LATE on shared runners — observed consistently; times below
-# assume US daylight saving):
-#   13:00 UTC morning -> lands ~14:05-14:15 UTC (~10:05-10:15 ET, after the
-#     open) -> close due positions + daily plan/performance email
-#   18:30 UTC entry   -> lands ~19:30-19:45 UTC (~15:30-15:45 ET, just
-#     before the close) -> open tonight's / tomorrow morning's positions
-# If GitHub ever fires on time, the entry run lands ~14:30 ET — earlier
-# than ideal but still on live quotes. NOTE: when DST ends (November),
-# both runs land one hour earlier in Eastern time; shift the crons +1h.
+# Two weekday phases. PRIMARY trigger: an external scheduler (cron-job.org,
+# timezone America/New_York) calls the workflow_dispatch API at exactly
+#   10:10 ET -> phase=morning  (close due positions + daily plan email)
+#   15:40 ET -> phase=entry    (open positions just before the close)
+# so runs start within seconds of the target and track DST automatically.
+# See "Paper trader triggers" in README.md for the setup.
+#
+# The crons below are only a FALLBACK if the external trigger fails.
+# GitHub starts scheduled runs 55-75 minutes late on shared runners
+# (observed consistently), which is exactly why the external trigger is
+# primary. Double runs are harmless: position state dedupes trades, and a
+# ledger marker keeps the daily plan email to one send per day. NOTE:
+# cron is UTC — when DST ends (November), shift both crons +1h.
 
 on:
   schedule:
