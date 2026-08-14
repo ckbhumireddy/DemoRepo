@@ -87,6 +87,52 @@ def test_timing_flows_from_entries_to_analysis():
     assert all(a.timing == "after-market" for a in result.analyses)
 
 
+def test_paper_file_written_only_on_real_runs(tmp_path):
+    import os
+
+    paper = str(tmp_path / "paper.json")
+    run_analyzer(
+        _config(paper_file=paper), today=TODAY, provider=None, entries=[]
+    )
+    assert not os.path.exists(paper)  # dry run never writes
+
+    real = AnalyzerConfig(
+        smtp_host="smtp.example.com",
+        email_from="a@example.com",
+        email_to=["a@example.com"],
+        paper_file=paper,
+        scorecard_file="",  # keep the scorecard out of the working directory
+    )
+    # entries=[] -> nothing analyzed -> no email attempt, but the paper
+    # ledger is still created on a real run.
+    run_analyzer(real, today=TODAY, provider=None, entries=[])
+    assert os.path.exists(paper)
+
+
+def test_paper_positions_opened_from_demo_sheet(tmp_path):
+    from earnings_analyzer.paper import load_paper
+
+    paper = str(tmp_path / "paper.json")
+    provider, entries = build_demo_provider(TODAY)
+    real = AnalyzerConfig(
+        smtp_host="smtp.example.com",
+        email_from="a@example.com",
+        email_to=["a@example.com"],
+        paper_file=paper,
+        scorecard_file="",
+        analyzer_send_empty=False,
+        dry_run=True,  # avoid the real SMTP send...
+    )
+    # ...but exercise the trading path directly instead of via run_analyzer.
+    result = run_analyzer(real, today=TODAY, provider=provider, entries=entries)
+    from earnings_analyzer.paper import open_positions
+
+    data = load_paper(paper, 25000.0)
+    opened = open_positions(data, result.analyses, TODAY)
+    assert opened >= 1  # demo sheet has tradeable A/B setups
+    assert all(p["risk_dollars"] <= 5000.0 for p in data["positions"])
+
+
 def test_failed_ticker_does_not_kill_the_run():
     provider, entries = build_demo_provider(TODAY)
 
