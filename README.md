@@ -185,3 +185,44 @@ not offer):
 
 If the token lapses, runs keep working on Yahoo data -- quality degrades,
 nothing breaks.
+
+## Paper Trader (earnings_trader)
+
+An independent paper-trading service. It finds candidates in the digest's
+window file (tonight's after-market and tomorrow's pre-market reporters),
+runs its own signal pipeline (implied vs historical move, liquidity, trend),
+and trades one defined-risk option strategy per setup: $25,000 start, max
+$5,000 risk per position. Emails: a daily plan + 30-day performance email
+each morning, one email per trade opened, one per trade closed.
+
+```powershell
+python -m earnings_trader --phase morning --dry-run   # plan preview
+python -m earnings_trader --phase entry --dry-run     # entry preview
+```
+
+### Paper trader triggers
+
+GitHub's own cron starts runs 55-75 minutes late, so the workflow keeps its
+crons only as a fallback. The primary trigger is an external scheduler that
+calls the workflow_dispatch API at the exact minute. Setup (cron-job.org,
+free tier):
+
+1. Create a fine-grained GitHub token: github.com -> Settings -> Developer
+   settings -> Fine-grained tokens. Repository access: only this repo.
+   Permissions: **Actions: Read and write**. Copy the token.
+2. At cron-job.org create two jobs, timezone **America/New_York** (this
+   tracks DST automatically; the UTC crons in the workflow do not):
+   - "trader-morning": weekdays 10:10, body `{"ref":"master","inputs":{"phase":"morning"}}`
+   - "trader-entry":   weekdays 15:40, body `{"ref":"master","inputs":{"phase":"entry"}}`
+3. Both jobs POST to
+   `https://api.github.com/repos/ckbhumireddy/DemoRepo/actions/workflows/earnings-trader.yml/dispatches`
+   with headers:
+   - `Authorization: Bearer <token>`
+   - `Accept: application/vnd.github+json`
+   - `Content-Type: application/json`
+4. Test from a shell (expects HTTP 204, then a run appears):
+   `gh api repos/ckbhumireddy/DemoRepo/actions/workflows/earnings-trader.yml/dispatches -f ref=master -f "inputs[phase]=morning" -f "inputs[dry_run]=true"`
+
+Double runs (external + cron fallback on the same day) are harmless:
+position state dedupes opens and closes, and a ledger marker keeps the
+daily plan email to one send per day.

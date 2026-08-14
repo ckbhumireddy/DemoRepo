@@ -135,15 +135,24 @@ def run_trader(
 
     plan_subject = None
     if phase == "morning":
-        summary = summarize(data, today)
-        summary.closed_this_run = closed
-        subject, text, html_body = render_plan_email(
-            summary, decisions, skipped, today, window_note=window_note
-        )
-        plan_subject = subject
-        # In dry runs the notifier logs the full text body instead of sending.
-        notifier.send(subject, text, html_body)
-        emails_sent += 1
+        # An external precise trigger AND the cron fallback can both fire the
+        # morning phase on the same day; the ledger marker keeps the daily
+        # plan email to one send. Trade emails need no marker — position
+        # state already dedupes opens and closes.
+        if data.get("last_plan_date") == today.isoformat():
+            logger.info("Daily plan already sent today; skipping duplicate")
+        else:
+            summary = summarize(data, today)
+            summary.closed_this_run = closed
+            subject, text, html_body = render_plan_email(
+                summary, decisions, skipped, today, window_note=window_note
+            )
+            plan_subject = subject
+            # In dry runs the notifier logs the text body instead of sending.
+            notifier.send(subject, text, html_body)
+            emails_sent += 1
+            if not config.dry_run:
+                data["last_plan_date"] = today.isoformat()
 
     if not config.dry_run:
         save_ledger(config.trader_ledger_file, data, today)
