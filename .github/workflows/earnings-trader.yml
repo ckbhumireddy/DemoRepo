@@ -1,0 +1,101 @@
+name: Earnings paper trader
+
+# Two weekday phases (cron is UTC; GitHub starts scheduled runs 55-75
+# minutes LATE on shared runners — observed consistently; times below
+# assume US daylight saving):
+#   13:00 UTC morning -> lands ~14:05-14:15 UTC (~10:05-10:15 ET, after the
+#     open) -> close due positions + daily plan/performance email
+#   18:30 UTC entry   -> lands ~19:30-19:45 UTC (~15:30-15:45 ET, just
+#     before the close) -> open tonight's / tomorrow morning's positions
+# If GitHub ever fires on time, the entry run lands ~14:30 ET — earlier
+# than ideal but still on live quotes. NOTE: when DST ends (November),
+# both runs land one hour earlier in Eastern time; shift the crons +1h.
+
+on:
+  schedule:
+    - cron: "0 13 * * 1-5"    # morning
+    - cron: "30 18 * * 1-5"   # entry
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Which phase to run"
+        type: choice
+        options: [morning, entry]
+        default: morning
+      dry_run:
+        description: "Preview only (do not trade or email)"
+        type: boolean
+        default: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Read-only view of the window hand-off the digest run wrote.
+      - name: Restore window hand-off
+        uses: actions/cache/restore@v4
+        with:
+          path: out
+          key: earnings-window-
+          restore-keys: |
+            earnings-window-
+
+      # Rolling state cache shared with the notifications workflow (caches
+      # are repo-scoped): state/trader.json rides alongside notified.json
+      # and scorecard.json. The day's crons are staggered, so each run
+      # restores the previous run's snapshot and re-saves the whole dir.
+      - name: Persist trader state
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: earnings-state-${{ github.run_id }}
+          restore-keys: |
+            earnings-state-
+
+      - name: Run trader
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+          WINDOW_FILE: out/window.json
+          # Schwab real-time market data (optional; Yahoo fallback when
+          # unset or when the weekly token has lapsed).
+          SCHWAB_APP_KEY: ${{ secrets.SCHWAB_APP_KEY }}
+          SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
+          SCHWAB_TOKEN: ${{ secrets.SCHWAB_TOKEN }}
+        run: |
+          python -m earnings_trader \
+            --phase ${{ github.event_name == 'schedule'
+                        && (github.event.schedule == '0 13 * * 1-5' && 'morning' || 'entry')
+                        || inputs.phase }} \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python scripts/send_alert.py

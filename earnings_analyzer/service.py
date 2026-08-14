@@ -164,35 +164,8 @@ def run_analyzer(
             save_scorecard(config.scorecard_file, data, today)
         scorecard_summary = summarize(data)
 
-    # Paper trader: close positions whose report has passed, then open new
-    # ones from today's sheet. Dry runs read the summary but trade nothing.
-    paper_summary = None
-    if config.paper_file:
-        from .paper import (
-            close_due_positions,
-            load_paper,
-            open_positions,
-            save_paper,
-            summarize_paper,
-        )
-
-        pdata = load_paper(config.paper_file, config.paper_start_balance)
-        closed = []
-        if not config.dry_run:
-            closed = close_due_positions(pdata, provider, today)
-            open_positions(
-                pdata,
-                analyses,
-                today,
-                max_risk=config.paper_max_risk,
-                min_grade=config.paper_min_grade,
-            )
-            save_paper(config.paper_file, pdata, today)
-        paper_summary = summarize_paper(pdata)
-        paper_summary.closed_this_run = closed
-
     subject, text_body, html_body = render_email(
-        analyses, today, scorecard=scorecard_summary, paper=paper_summary
+        analyses, today, scorecard=scorecard_summary
     )
 
     sent = False
