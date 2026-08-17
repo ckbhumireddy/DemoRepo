@@ -10,7 +10,13 @@ import datetime as dt
 import html
 from typing import List, Optional, Tuple
 
-from .signals import AlertTrigger, Insight, PortfolioView, PositionView
+from .signals import (
+    MIN_INSIGHT_VALUE,
+    AlertTrigger,
+    Insight,
+    PortfolioView,
+    PositionView,
+)
 
 GREEN = "#1a7f37"
 RED = "#c62828"
@@ -56,6 +62,88 @@ def _move_color(v: Optional[float]) -> str:
     if v is None:
         return "#444"
     return GREEN if v >= 0 else RED
+
+
+def _split_dust(views: List[PositionView]):
+    """Positions below the insight noise floor collapse into one line."""
+    major = [
+        v for v in views
+        if v.market_value is None or abs(v.market_value) >= MIN_INSIGHT_VALUE
+    ]
+    dust = [
+        v for v in views
+        if v.market_value is not None and abs(v.market_value) < MIN_INSIGHT_VALUE
+    ]
+    return major, dust
+
+
+def _dust_summary(dust: List[PositionView]) -> Optional[str]:
+    if not dust:
+        return None
+    total = sum(v.market_value for v in dust)
+    day = sum(v.day_pnl for v in dust if v.day_pnl is not None)
+    tickers = ", ".join(v.ticker for v in dust[:8])
+    if len(dust) > 8:
+        tickers += ", …"
+    return (
+        f"+ {len(dust)} small positions ({tickers}) worth "
+        f"{_money(total)} total, day {day:+,.2f}"
+    )
+
+
+_TH = (
+    "padding:4px 8px;border-bottom:1px solid #bbb;text-align:right;"
+    "font-size:12px;color:#555"
+)
+_TD = "padding:3px 8px;border-bottom:1px solid #eee;text-align:right"
+
+
+def _positions_table(views: List[PositionView]) -> str:
+    """A real table: aligned columns beat 77 crowded prose rows."""
+    major, dust = _split_dust(views)
+    head = (
+        "<tr>"
+        f"<th style='{_TH};text-align:left'>Ticker</th>"
+        f"<th style='{_TH}'>Value</th>"
+        f"<th style='{_TH}'>Weight</th>"
+        f"<th style='{_TH}'>Day</th>"
+        f"<th style='{_TH}'>vs SPY</th>"
+        f"<th style='{_TH}'>Total P&L</th>"
+        "</tr>"
+    )
+    rows = []
+    for v in major:
+        w = f"{v.weight_pct:.1f}%" if v.weight_pct is not None else "—"
+        rows.append(
+            "<tr>"
+            f"<td style='{_TD};text-align:left'><b>{html.escape(v.ticker)}</b></td>"
+            f"<td style='{_TD}'>{_money(v.market_value)}</td>"
+            f"<td style='{_TD}'>{w}</td>"
+            f"<td style='{_TD};color:{_move_color(v.day_change_pct)}'>"
+            f"{_pct(v.day_change_pct)}</td>"
+            f"<td style='{_TD}'>{_pct(v.vs_spy_pct)}</td>"
+            f"<td style='{_TD};color:{_move_color(v.total_pnl_pct)}'>"
+            f"{_pct(v.total_pnl_pct)}</td>"
+            "</tr>"
+        )
+    dust_line = _dust_summary(dust)
+    dust_html = (
+        f"<div style='margin-top:6px;color:#777;font-size:12px'>"
+        f"{html.escape(dust_line)}</div>"
+        if dust_line
+        else ""
+    )
+    return (
+        "<div style='border:1px solid #d0d0d0;border-radius:8px;"
+        "padding:10px 14px;margin:0 0 10px'>"
+        "<div style='font-size:15px;margin-bottom:6px'><b>Positions</b>"
+        " <span style='color:#777;font-weight:normal'>(by value)</span></div>"
+        "<div style='overflow-x:auto'>"
+        "<table style='border-collapse:collapse;width:100%;font-size:13px'>"
+        + head + "".join(rows) + "</table></div>"
+        + dust_html
+        + "</div>"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -127,24 +215,19 @@ def render_eod_email(
             f"{portfolio.unquoted} position(s) had no quote and are excluded "
             "from the numbers above."
         )
-    lines += ["", "Positions:"]
-    for v in views:
+    major, dust = _split_dust(views)
+    lines += ["", "Positions (by value):"]
+    lines.append(f"  {'':<7}{'VALUE':>12}  {'WT':>6}  {'DAY':>8}  {'TOTAL':>8}")
+    for v in major:
         w = f"{v.weight_pct:.1f}%" if v.weight_pct is not None else "—"
         lines.append(
-            f"  {v.ticker:<6} {v.position.quantity:>10,.2f}  "
-            f"value {_money(v.market_value):>12}  w {w:>6}  "
-            f"day {_pct(v.day_change_pct):>8}"
-            + (
-                f"  vs SPY {_pct(v.vs_spy_pct):>8}"
-                if v.vs_spy_pct is not None
-                else ""
-            )
-            + (
-                f"  total {_pct(v.total_pnl_pct)}"
-                if v.total_pnl_pct is not None
-                else ""
-            )
+            f"  {v.ticker:<7}{_money(v.market_value):>12}  {w:>6}  "
+            f"{_pct(v.day_change_pct):>8}  "
+            f"{_pct(v.total_pnl_pct) if v.total_pnl_pct is not None else '—':>8}"
         )
+    dust_line = _dust_summary(dust)
+    if dust_line:
+        lines.append(f"  {dust_line}")
     gainers, losers = movers
     if gainers or losers:
         lines += ["", "Biggest movers:"]
@@ -185,26 +268,7 @@ def render_eod_email(
         ))
     cards = [_card("Portfolio", summary_rows)]
 
-    pos_rows = []
-    for v in views:
-        w = f"{v.weight_pct:.1f}%" if v.weight_pct is not None else "—"
-        pos_rows.append(_row(
-            f"<b>{html.escape(v.ticker)}</b> &middot; {v.position.quantity:,.2f} sh"
-            f" &middot; {_money(v.market_value)} &middot; {w}"
-            f" &middot; day <span style='color:{_move_color(v.day_change_pct)}'>"
-            f"{_pct(v.day_change_pct)}</span>"
-            + (
-                f" &middot; vs SPY {_pct(v.vs_spy_pct)}"
-                if v.vs_spy_pct is not None
-                else ""
-            )
-            + (
-                f" &middot; total {_pct(v.total_pnl_pct)}"
-                if v.total_pnl_pct is not None
-                else ""
-            )
-        ))
-    cards.append(_card("Positions", pos_rows))
+    cards.append(_positions_table(views))
 
     if gainers or losers:
         cards.append(_card("Biggest movers", [

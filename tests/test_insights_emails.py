@@ -41,7 +41,9 @@ def test_eod_email_contents():
     assert "Total value $16,600.00" in text
     assert "SPY +0.20%" in text
     flat = " ".join(text.split())
-    assert "TGT" in flat and "day +4.00%" in flat
+    assert "TGT" in flat and "+4.00%" in flat
+    assert "VALUE" in text and "DAY" in text     # aligned table header
+    assert "<table" in html and "Ticker" in html  # real table in HTML
     assert "Consider trimming" in text
     assert DISCLAIMER in text
     assert "Portfolio EOD insights" in html and DISCLAIMER in html

@@ -88,8 +88,10 @@ def test_big_loss_and_underwater_rules():
     )
     insights = generate_insights(views, [], [], max_weight_pct=99.0,
                                  move_alert_pct=5.0)
-    cats = {i.category for i in insights if i.ticker == "TGT"}
+    cats = {i.category for i in insights}
     assert "big-loss" in cats and "underwater" in cats
+    under = next(i for i in insights if i.category == "underwater")
+    assert "TGT -30%" in under.fact   # consolidated single line
 
 
 def test_volatility_spike_vs_flat_history():
