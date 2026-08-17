@@ -105,6 +105,8 @@ def build_views(
     for v in views:
         if v.market_value is not None and invested > 0:
             v.weight_pct = round(abs(v.market_value) / invested * 100.0, 2)
+    # Largest holdings first — the email reads top-down by importance.
+    views.sort(key=lambda v: -(abs(v.market_value) if v.market_value else 0.0))
 
     valued = [v for v in views if v.market_value is not None]
     portfolio = PortfolioView(
@@ -238,22 +240,31 @@ def generate_insights(
                 ),
             ))
 
-    for v in views:  # rule 5: badly under water
-        if not _significant(v):
-            continue
-        if v.total_pnl_pct is not None and v.total_pnl_pct <= -UNDERWATER_PCT:
-            insights.append(Insight(
-                category="underwater",
-                ticker=v.ticker,
-                fact=(
-                    f"{v.ticker} is down {abs(v.total_pnl_pct):.0f}% from "
-                    f"your average cost of ${v.position.cost_basis:,.2f}."
-                ),
-                suggestion=(
-                    "Consider whether it still earns its place — or whether "
-                    "tax-loss harvesting applies."
-                ),
-            ))
+    # Rule 5: badly under water — one consolidated line, not one per ticker
+    # (a long portfolio can hold a dozen of these; a list reads better).
+    underwater = [
+        v for v in views
+        if _significant(v)
+        and v.total_pnl_pct is not None
+        and v.total_pnl_pct <= -UNDERWATER_PCT
+    ]
+    if underwater:
+        underwater.sort(key=lambda v: v.total_pnl_pct)
+        listing = " · ".join(
+            f"{v.ticker} {v.total_pnl_pct:.0f}%" for v in underwater
+        )
+        insights.append(Insight(
+            category="underwater",
+            ticker="",
+            fact=(
+                f"{len(underwater)} position(s) are 20%+ below your average "
+                f"cost: {listing}."
+            ),
+            suggestion=(
+                "Consider whether each still earns its place — or whether "
+                "tax-loss harvesting applies."
+            ),
+        ))
 
     for v in views:  # rule 6: winner concentration creep (1 wins over 6)
         if v.ticker in concentrated or not _significant(v):
@@ -329,7 +340,9 @@ def check_alert_triggers(
 def biggest_movers(
     views: List[PositionView], n: int = 3
 ) -> Tuple[List[PositionView], List[PositionView]]:
-    moved = [v for v in views if v.day_change_pct is not None]
+    moved = [
+        v for v in views if v.day_change_pct is not None and _significant(v)
+    ]
     moved.sort(key=lambda v: v.day_change_pct, reverse=True)
     gainers = [v for v in moved[:n] if v.day_change_pct > 0]
     losers = [v for v in reversed(moved[-n:]) if v.day_change_pct < 0]
