@@ -26,10 +26,10 @@ def _quote(ticker, last, prev):
 
 
 def _views(**quote_overrides):
-    """Two positions: TGT 100 @ cost 100, SNDK 10 @ cost 40."""
+    """Two positions: TGT 100 @ cost 100, SNDK 20 @ cost 40."""
     snapshot = _snapshot(
         Position("TGT", 100, 100.0),
-        Position("SNDK", 10, 40.0),
+        Position("SNDK", 20, 40.0),
         cash=1000.0,
     )
     quotes = {
@@ -50,9 +50,9 @@ def test_build_views_math():
     assert tgt.total_pnl == 5600.0
     assert tgt.total_pnl_pct == 56.0
     assert round(tgt.vs_spy_pct, 1) == 3.8            # 4.0 - 0.2
-    assert round(tgt.weight_pct, 1) == 97.3           # 15600 / 16040
-    assert portfolio.total_value == 15600.0 + 440.0 + 1000.0
-    assert portfolio.day_pnl == 640.0
+    assert round(tgt.weight_pct, 1) == 94.7           # 15600 / 16480
+    assert portfolio.total_value == 15600.0 + 880.0 + 1000.0
+    assert portfolio.day_pnl == 680.0
     assert portfolio.unquoted == 0
 
 
@@ -130,6 +130,42 @@ def test_alert_triggers():
     assert ("position", "SNDK") in kinds
     assert ("portfolio", "PORTFOLIO") in kinds
     assert ("position", "TGT") not in kinds
+
+
+def test_noise_floor_suppresses_dust_positions():
+    """A $44 lottery ticket down 95% must not flood the email or alerts."""
+    snapshot = _snapshot(
+        Position("TGT", 100, 100.0),
+        Position("DUST", 10, 90.0),           # value 10 x 4.40 = $44
+        cash=0.0,
+    )
+    quotes = {
+        "TGT": _quote("TGT", 156.0, 150.0),
+        "DUST": _quote("DUST", 4.40, 5.00),   # day -12%, total -95%
+        "SPY": _quote("SPY", 650.0, 648.7),
+    }
+    views, portfolio = build_views(snapshot, quotes)
+    insights = generate_insights(
+        views, [],
+        earnings_ahead(
+            [EarningsEvent("DUST", TODAY + dt.timedelta(days=2))], TODAY, 7
+        ),
+        max_weight_pct=99.0, move_alert_pct=5.0,
+    )
+    assert all(i.ticker != "DUST" for i in insights)
+    triggers = check_alert_triggers(views, portfolio, move_alert_pct=5.0,
+                                    portfolio_alert_pct=99.0)
+    assert all(t.ticker != "DUST" for t in triggers)
+
+
+def test_tiny_move_is_not_a_vol_spike():
+    views, _ = _views(TGT=_quote("TGT", 100.05, 100.0))   # +0.05% day
+    calm = [
+        PriceBar(day=TODAY - dt.timedelta(days=i), open=100, high=100,
+                 low=100, close=100.0 * (1.0001 ** (i % 2)))
+        for i in range(31, 0, -1)
+    ]
+    assert volatility_spikes(views, {"TGT": calm}, mult=2.0) == []
 
 
 def test_biggest_movers_split():

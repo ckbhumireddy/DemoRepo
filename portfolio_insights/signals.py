@@ -20,6 +20,12 @@ from .quotes import BENCHMARK, Quote
 
 UNDERWATER_PCT = 20.0
 WINNER_GAIN_PCT = 50.0
+# Noise floor: per-position insights and alerts only for positions worth at
+# least this much — a lottery-ticket holding down 95% is not a watch item.
+MIN_INSIGHT_VALUE = 500.0
+# A "volatility spike" additionally requires a move of at least this many
+# percent — 0.1% vs a 0.05% norm is technically 2x and practically nothing.
+MIN_SPIKE_PCT = 1.0
 
 
 @dataclass
@@ -63,6 +69,11 @@ class AlertTrigger:
     kind: str          # "position" | "portfolio"
     ticker: str        # "PORTFOLIO" for kind == "portfolio"
     detail: str
+
+
+def _significant(v: "PositionView") -> bool:
+    """Above the noise floor: worth mentioning in insights and alerts."""
+    return v.market_value is not None and abs(v.market_value) >= MIN_INSIGHT_VALUE
 
 
 def build_views(
@@ -125,7 +136,9 @@ def volatility_spikes(
     """Positions whose day move dwarfs their own 30-day typical move."""
     out: List[Insight] = []
     for v in views:
-        if v.day_change_pct is None:
+        if v.day_change_pct is None or not _significant(v):
+            continue
+        if abs(v.day_change_pct) < MIN_SPIKE_PCT:
             continue
         bars = sorted(histories.get(v.ticker, []), key=lambda b: b.day)[-31:]
         closes = [b.close for b in bars if b.close > 0]
@@ -205,9 +218,14 @@ def generate_insights(
             ))
 
     insights.extend(vol_spikes)   # rule 2
-    insights.extend(events)       # rule 3
+
+    # Rule 3: earnings ahead — only for positions above the noise floor.
+    significant = {v.ticker for v in views if _significant(v)}
+    insights.extend(i for i in events if i.ticker in significant)
 
     for v in views:  # rule 4: big loss day
+        if not _significant(v):
+            continue
         if v.day_change_pct is not None and v.day_change_pct <= -move_alert_pct:
             pnl = f" ({v.day_pnl:+,.0f})" if v.day_pnl is not None else ""
             insights.append(Insight(
@@ -221,6 +239,8 @@ def generate_insights(
             ))
 
     for v in views:  # rule 5: badly under water
+        if not _significant(v):
+            continue
         if v.total_pnl_pct is not None and v.total_pnl_pct <= -UNDERWATER_PCT:
             insights.append(Insight(
                 category="underwater",
@@ -236,7 +256,7 @@ def generate_insights(
             ))
 
     for v in views:  # rule 6: winner concentration creep (1 wins over 6)
-        if v.ticker in concentrated:
+        if v.ticker in concentrated or not _significant(v):
             continue
         if (
             v.total_pnl_pct is not None
@@ -277,6 +297,8 @@ def check_alert_triggers(
             detail=f"portfolio {portfolio.day_change_pct:+.1f}%",
         ))
     for v in views:
+        if not _significant(v):
+            continue
         if v.day_change_pct is not None and abs(v.day_change_pct) >= move_alert_pct:
             triggers.append(AlertTrigger(
                 kind="position",
