@@ -226,3 +226,44 @@ free tier):
 Double runs (external + cron fallback on the same day) are harmless:
 position state dedupes opens and closes, and a ledger marker keeps the
 daily plan email to one send per day.
+
+## Portfolio Insights (portfolio_insights)
+
+Watches your own portfolio (not held at Schwab — the holdings come from a
+JSON document you maintain) and emails rule-based insights:
+
+- **EOD email** (~16:35 ET): portfolio value, day and total P&L vs SPY, a
+  positions table, biggest movers, upcoming earnings for held tickers, and
+  watch items with soft suggestions (concentration, volatility spikes, big
+  loss days, positions far under water, winner concentration creep).
+- **Midday alert** (~12:30 ET): sent only when a position moves more than
+  5% or the portfolio more than 2% (thresholds configurable via
+  `INSIGHTS_*` env vars).
+
+Market data comes from Schwab (quotes and history) with automatic Yahoo
+fallback. Holdings never live in the repository.
+
+### Updating the portfolio
+
+1. Fidelity -> Accounts & Trade -> Positions -> download icon (CSV).
+2. `python scripts/fidelity_to_portfolio.py Portfolio_Positions_<date>.csv`
+   writes `portfolio.json` (gitignored) and lists any excluded option rows.
+3. `gh secret set PORTFOLIO_JSON < portfolio.json` updates the CI secret.
+
+Repeat after trades. Local previews:
+
+```powershell
+python -m portfolio_insights --mode eod --dry-run
+python -m portfolio_insights --mode midday --dry-run
+```
+
+### Insights triggers
+
+Same pattern as the paper trader: two more cron-job.org jobs (timezone
+America/New_York, same PAT, same headers) POSTing to
+`https://api.github.com/repos/ckbhumireddy/DemoRepo/actions/workflows/portfolio-insights.yml/dispatches`:
+
+- "insights-midday": weekdays 12:30, body `{"ref":"master","inputs":{"mode":"midday"}}`
+- "insights-eod":    weekdays 16:35, body `{"ref":"master","inputs":{"mode":"eod"}}`
+
+The workflow's UTC crons are fallback only.
