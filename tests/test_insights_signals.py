@@ -125,11 +125,45 @@ def test_alert_triggers():
     views, portfolio = _views()
     triggers = check_alert_triggers(views, portfolio, move_alert_pct=5.0,
                                     portfolio_alert_pct=2.0)
-    # TGT +4% below 5%; SNDK +10% triggers; portfolio +3.99% triggers.
+    # TGT +4% below 5% and +$600 below $5,000; SNDK +10% triggers;
+    # portfolio +3.99% triggers by percent.
     kinds = {(t.kind, t.ticker) for t in triggers}
     assert ("position", "SNDK") in kinds
     assert ("portfolio", "PORTFOLIO") in kinds
     assert ("position", "TGT") not in kinds
+
+
+def test_dollar_threshold_triggers_below_percent_gate():
+    """A huge position: -3.2% is below the 5% gate but -$8,148 is not."""
+    snapshot = _snapshot(Position("MSFT", 516.65, 387.16))
+    quotes = {
+        "MSFT": _quote("MSFT", 479.63, 495.40),   # -3.18% day
+        "SPY": _quote("SPY", 650.0, 648.7),
+    }
+    views, portfolio = build_views(snapshot, quotes)
+    triggers = check_alert_triggers(
+        views, portfolio, move_alert_pct=5.0, portfolio_alert_pct=99.0,
+        move_alert_dollars=5000.0, portfolio_alert_dollars=1e12,
+    )
+    position = [t for t in triggers if t.kind == "position"]
+    assert len(position) == 1 and position[0].ticker == "MSFT"
+    assert "%" in position[0].detail and "(-8," in position[0].detail
+
+    # Raise the dollar gate and the same move stays silent.
+    assert check_alert_triggers(
+        views, portfolio, move_alert_pct=5.0, portfolio_alert_pct=99.0,
+        move_alert_dollars=1e12, portfolio_alert_dollars=1e12,
+    ) == []
+
+
+def test_portfolio_dollar_threshold():
+    views, portfolio = _views()   # day P&L +$680
+    triggers = check_alert_triggers(
+        views, portfolio, move_alert_pct=99.0, portfolio_alert_pct=99.0,
+        move_alert_dollars=1e12, portfolio_alert_dollars=500.0,
+    )
+    assert [t.kind for t in triggers] == ["portfolio"]
+    assert "(+680)" in triggers[0].detail
 
 
 def test_noise_floor_suppresses_dust_positions():

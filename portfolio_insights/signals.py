@@ -285,26 +285,44 @@ def check_alert_triggers(
     *,
     move_alert_pct: float,
     portfolio_alert_pct: float,
+    move_alert_dollars: float = 5000.0,
+    portfolio_alert_dollars: float = 15000.0,
 ) -> List[AlertTrigger]:
+    """Percent OR dollar thresholds trigger — a large position loses real
+    money on a percent move far below the percent gate."""
     triggers: List[AlertTrigger] = []
-    if (
-        portfolio.day_change_pct is not None
-        and abs(portfolio.day_change_pct) >= portfolio_alert_pct
+    pct = portfolio.day_change_pct
+    pnl = portfolio.day_pnl
+    if (pct is not None and abs(pct) >= portfolio_alert_pct) or (
+        pnl is not None and abs(pnl) >= portfolio_alert_dollars
     ):
-        triggers.append(AlertTrigger(
-            kind="portfolio",
-            ticker="PORTFOLIO",
-            detail=f"portfolio {portfolio.day_change_pct:+.1f}%",
-        ))
+        detail = "portfolio"
+        if pct is not None:
+            detail += f" {pct:+.1f}%"
+        if pnl is not None:
+            detail += f" ({pnl:+,.0f})"
+        triggers.append(
+            AlertTrigger(kind="portfolio", ticker="PORTFOLIO", detail=detail)
+        )
     for v in views:
         if not _significant(v):
             continue
-        if v.day_change_pct is not None and abs(v.day_change_pct) >= move_alert_pct:
-            triggers.append(AlertTrigger(
-                kind="position",
-                ticker=v.ticker,
-                detail=f"{v.ticker} {v.day_change_pct:+.1f}%",
-            ))
+        pct_hit = (
+            v.day_change_pct is not None
+            and abs(v.day_change_pct) >= move_alert_pct
+        )
+        dollar_hit = (
+            v.day_pnl is not None and abs(v.day_pnl) >= move_alert_dollars
+        )
+        if pct_hit or dollar_hit:
+            detail = v.ticker
+            if v.day_change_pct is not None:
+                detail += f" {v.day_change_pct:+.1f}%"
+            if v.day_pnl is not None:
+                detail += f" ({v.day_pnl:+,.0f})"
+            triggers.append(
+                AlertTrigger(kind="position", ticker=v.ticker, detail=detail)
+            )
     return triggers
 
 

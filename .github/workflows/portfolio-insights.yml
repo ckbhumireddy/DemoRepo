@@ -67,6 +67,11 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           DRY_RUN: ${{ vars.DRY_RUN }}
+          # Alert thresholds (optional repo variables; blank = defaults).
+          INSIGHTS_MOVE_ALERT_PCT: ${{ vars.INSIGHTS_MOVE_ALERT_PCT }}
+          INSIGHTS_MOVE_ALERT_DOLLARS: ${{ vars.INSIGHTS_MOVE_ALERT_DOLLARS }}
+          INSIGHTS_PORTFOLIO_ALERT_PCT: ${{ vars.INSIGHTS_PORTFOLIO_ALERT_PCT }}
+          INSIGHTS_PORTFOLIO_ALERT_DOLLARS: ${{ vars.INSIGHTS_PORTFOLIO_ALERT_DOLLARS }}
           # The holdings document (JSON) — see scripts/fidelity_to_portfolio.py.
           PORTFOLIO_JSON: ${{ secrets.PORTFOLIO_JSON }}
           # Schwab market data for quotes/history (optional; Yahoo fallback).

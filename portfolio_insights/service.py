@@ -134,6 +134,8 @@ def run_insights(
             portfolio,
             move_alert_pct=config.insights_move_alert_pct,
             portfolio_alert_pct=config.insights_portfolio_alert_pct,
+            move_alert_dollars=config.insights_move_alert_dollars,
+            portfolio_alert_dollars=config.insights_portfolio_alert_dollars,
         )
         keys = [alert_key(today, t.ticker, t.kind) for t in triggers]
         fresh = [
