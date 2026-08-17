@@ -26,7 +26,6 @@ from .emails import render_eod_email, render_midday_email
 from .portfolio import load_portfolio
 from .quotes import fetch_quotes
 from .signals import (
-    biggest_movers,
     build_views,
     check_alert_triggers,
     earnings_ahead,
@@ -111,7 +110,7 @@ def run_insights(
             logger.warning("Portfolio unavailable; midday alert skipped")
             return _result()
         subject, text, html_body = render_eod_email(
-            [], None, [], ([], []), today, fetch_error=snapshot.fetch_error
+            [], None, [], today, fetch_error=snapshot.fetch_error
         )
         notifier.send(subject, text, html_body)
         if not config.dry_run and config.insights_state_file:
@@ -191,7 +190,7 @@ def run_insights(
         move_alert_pct=config.insights_move_alert_pct,
     )
     subject, text, html_body = render_eod_email(
-        views, portfolio, insights, biggest_movers(views), today
+        views, portfolio, insights, today
     )
     notifier.send(subject, text, html_body)
     if not config.dry_run and config.insights_state_file:
