@@ -340,10 +340,23 @@ def check_alert_triggers(
 def biggest_movers(
     views: List[PositionView], n: int = 3
 ) -> Tuple[List[PositionView], List[PositionView]]:
+    """Top gainers/losers by day percentage (significant positions only)."""
     moved = [
         v for v in views if v.day_change_pct is not None and _significant(v)
     ]
     moved.sort(key=lambda v: v.day_change_pct, reverse=True)
     gainers = [v for v in moved[:n] if v.day_change_pct > 0]
     losers = [v for v in reversed(moved[-n:]) if v.day_change_pct < 0]
+    return gainers, losers
+
+
+def biggest_dollar_movers(
+    views: List[PositionView], n: int = 3
+) -> Tuple[List[PositionView], List[PositionView]]:
+    """Top gainers/losers by day P&L dollars — a big position on a small
+    percent move often matters more than a small one on a big move."""
+    moved = [v for v in views if v.day_pnl is not None and _significant(v)]
+    moved.sort(key=lambda v: v.day_pnl, reverse=True)
+    gainers = [v for v in moved[:n] if v.day_pnl > 0]
+    losers = [v for v in reversed(moved[-n:]) if v.day_pnl < 0]
     return gainers, losers

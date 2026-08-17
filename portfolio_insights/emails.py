@@ -16,6 +16,8 @@ from .signals import (
     Insight,
     PortfolioView,
     PositionView,
+    biggest_dollar_movers,
+    biggest_movers,
 )
 
 GREEN = "#1a7f37"
@@ -38,6 +40,11 @@ def _weekday(d: dt.date) -> str:
 
 def _money(v: Optional[float]) -> str:
     return "—" if v is None else f"${v:,.2f}"
+
+
+def _money0(v: Optional[float]) -> str:
+    """Whole dollars — cents are noise at position scale."""
+    return "—" if v is None else f"${v:,.0f}"
 
 
 def _pct(v: Optional[float]) -> str:
@@ -87,7 +94,7 @@ def _dust_summary(dust: List[PositionView]) -> Optional[str]:
         tickers += ", …"
     return (
         f"+ {len(dust)} small positions ({tickers}) worth "
-        f"{_money(total)} total, day {day:+,.2f}"
+        f"{_money0(total)} total, day {day:+,.0f}"
     )
 
 
@@ -117,7 +124,7 @@ def _positions_table(views: List[PositionView]) -> str:
         rows.append(
             "<tr>"
             f"<td style='{_TD};text-align:left'><b>{html.escape(v.ticker)}</b></td>"
-            f"<td style='{_TD}'>{_money(v.market_value)}</td>"
+            f"<td style='{_TD}'>{_money0(v.market_value)}</td>"
             f"<td style='{_TD}'>{w}</td>"
             f"<td style='{_TD};color:{_move_color(v.day_change_pct)}'>"
             f"{_pct(v.day_change_pct)}</td>"
@@ -153,7 +160,6 @@ def render_eod_email(
     views: List[PositionView],
     portfolio: PortfolioView,
     insights: List[Insight],
-    movers,
     today: dt.date,
     *,
     fetch_error: Optional[str] = None,
@@ -217,24 +223,31 @@ def render_eod_email(
         )
     major, dust = _split_dust(views)
     lines += ["", "Positions (by value):"]
-    lines.append(f"  {'':<7}{'VALUE':>12}  {'WT':>6}  {'DAY':>8}  {'TOTAL':>8}")
+    lines.append(f"  {'':<7}{'VALUE':>10}  {'WT':>6}  {'DAY':>8}  {'TOTAL':>8}")
     for v in major:
         w = f"{v.weight_pct:.1f}%" if v.weight_pct is not None else "—"
         lines.append(
-            f"  {v.ticker:<7}{_money(v.market_value):>12}  {w:>6}  "
+            f"  {v.ticker:<7}{_money0(v.market_value):>10}  {w:>6}  "
             f"{_pct(v.day_change_pct):>8}  "
             f"{_pct(v.total_pnl_pct) if v.total_pnl_pct is not None else '—':>8}"
         )
     dust_line = _dust_summary(dust)
     if dust_line:
         lines.append(f"  {dust_line}")
-    gainers, losers = movers
-    if gainers or losers:
-        lines += ["", "Biggest movers:"]
-        for v in gainers:
-            lines.append(f"  UP   {v.ticker} {_pct(v.day_change_pct)}")
-        for v in losers:
-            lines.append(f"  DOWN {v.ticker} {_pct(v.day_change_pct)}")
+
+    d_gain, d_lose = biggest_dollar_movers(views)
+    p_gain, p_lose = biggest_movers(views)
+    if d_gain or d_lose:
+        lines += ["", "Biggest movers by day P&L:"]
+        for v in d_gain + d_lose:
+            lines.append(
+                f"  {v.ticker:<7}{v.day_pnl:>+10,.0f}  ({_pct(v.day_change_pct)})"
+            )
+    if p_gain or p_lose:
+        lines += ["", "Biggest movers by day %:"]
+        for v in p_gain + p_lose:
+            pnl = f"  ({v.day_pnl:+,.0f})" if v.day_pnl is not None else ""
+            lines.append(f"  {v.ticker:<7}{_pct(v.day_change_pct):>10}{pnl}")
     if insights:
         lines += ["", "Watch items & suggestions:"]
         for i in insights:
@@ -270,16 +283,33 @@ def render_eod_email(
 
     cards.append(_positions_table(views))
 
-    if gainers or losers:
-        cards.append(_card("Biggest movers", [
-            _row(f"<b>{html.escape(v.ticker)}</b> {_pct(v.day_change_pct)}",
-                 GREEN)
-            for v in gainers
-        ] + [
-            _row(f"<b>{html.escape(v.ticker)}</b> {_pct(v.day_change_pct)}",
-                 RED)
-            for v in losers
-        ]))
+    if d_gain or d_lose or p_gain or p_lose:
+        mover_rows = []
+        if d_gain or d_lose:
+            mover_rows.append(_row("<b>By day P&L</b>", "#555"))
+            mover_rows += [
+                _row(
+                    f"<b>{html.escape(v.ticker)}</b> {v.day_pnl:+,.0f}"
+                    f" ({_pct(v.day_change_pct)})",
+                    GREEN if v.day_pnl > 0 else RED,
+                )
+                for v in d_gain + d_lose
+            ]
+        if p_gain or p_lose:
+            mover_rows.append(_row("<b>By day %</b>", "#555"))
+            mover_rows += [
+                _row(
+                    f"<b>{html.escape(v.ticker)}</b> {_pct(v.day_change_pct)}"
+                    + (
+                        f" ({v.day_pnl:+,.0f})"
+                        if v.day_pnl is not None
+                        else ""
+                    ),
+                    GREEN if v.day_change_pct > 0 else RED,
+                )
+                for v in p_gain + p_lose
+            ]
+        cards.append(_card("Biggest movers", mover_rows))
     if insights:
         cards.append(_card("Watch items & suggestions", [
             _row(

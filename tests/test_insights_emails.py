@@ -7,12 +7,7 @@ from portfolio_insights.emails import (
 )
 from portfolio_insights.portfolio import PortfolioSnapshot, Position
 from portfolio_insights.quotes import Quote
-from portfolio_insights.signals import (
-    AlertTrigger,
-    Insight,
-    biggest_movers,
-    build_views,
-)
+from portfolio_insights.signals import AlertTrigger, Insight, build_views
 
 TODAY = dt.date(2026, 8, 17)
 
@@ -33,17 +28,19 @@ def test_eod_email_contents():
     insights = [Insight("concentration", "TGT",
                         "TGT is 94.0% of your portfolio (threshold 20%).",
                         "Consider trimming or hedging.")]
-    subject, text, html = render_eod_email(
-        views, portfolio, insights, biggest_movers(views), TODAY
-    )
+    subject, text, html = render_eod_email(views, portfolio, insights, TODAY)
     assert subject.startswith("[Portfolio] EOD — Mon Aug 17")
     assert "+600" in subject and "1 watch item(s)" in subject
     assert "Total value $16,600.00" in text
     assert "SPY +0.20%" in text
     flat = " ".join(text.split())
     assert "TGT" in flat and "+4.00%" in flat
-    assert "VALUE" in text and "DAY" in text     # aligned table header
-    assert "<table" in html and "Ticker" in html  # real table in HTML
+    assert "$15,600 " in flat or "$15,600" in flat   # whole dollars, no cents
+    assert "$15,600.00" not in text                  # in the positions table
+    assert "VALUE" in text and "DAY" in text         # aligned table header
+    assert "Biggest movers by day P&L:" in text
+    assert "<table" in html and "Ticker" in html     # real table in HTML
+    assert "By day P&L" in html
     assert "Consider trimming" in text
     assert DISCLAIMER in text
     assert "Portfolio EOD insights" in html and DISCLAIMER in html
@@ -51,7 +48,7 @@ def test_eod_email_contents():
 
 def test_eod_degraded_mode():
     subject, text, html = render_eod_email(
-        [], None, [], ([], []), TODAY, fetch_error="no portfolio source: x"
+        [], None, [], TODAY, fetch_error="no portfolio source: x"
     )
     assert "could not load the portfolio" in subject
     assert "no portfolio source: x" in text
@@ -59,7 +56,7 @@ def test_eod_degraded_mode():
 
 
 def test_eod_empty_portfolio():
-    subject, text, _ = render_eod_email([], None, [], ([], []), TODAY)
+    subject, text, _ = render_eod_email([], None, [], TODAY)
     assert "no positions" in subject
     assert "no equity positions" in text
 

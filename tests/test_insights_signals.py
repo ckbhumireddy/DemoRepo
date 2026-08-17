@@ -5,6 +5,7 @@ from earnings_notifier.earnings import EarningsEvent
 from portfolio_insights.portfolio import PortfolioSnapshot, Position
 from portfolio_insights.quotes import Quote
 from portfolio_insights.signals import (
+    biggest_dollar_movers,
     biggest_movers,
     build_views,
     check_alert_triggers,
@@ -209,3 +210,12 @@ def test_biggest_movers_split():
     gainers, losers = biggest_movers(views)
     assert [v.ticker for v in gainers] == ["TGT"]
     assert [v.ticker for v in losers] == ["SNDK"]
+
+
+def test_biggest_dollar_movers_ranked_by_pnl():
+    # SNDK +10% is the biggest % move, but TGT's +$600 dwarfs its +$80.
+    views, _ = _views()
+    gainers, _losers = biggest_dollar_movers(views)
+    assert [v.ticker for v in gainers][:1] == ["TGT"]
+    p_gainers, _ = biggest_movers(views)
+    assert p_gainers[0].ticker == "SNDK"
