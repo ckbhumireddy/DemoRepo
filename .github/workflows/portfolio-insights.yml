@@ -30,6 +30,10 @@ on:
         description: "Preview only (do not email or write state)"
         type: boolean
         default: false
+      force:
+        description: "Ignore send-dedupe state (re-send even if already sent today)"
+        type: boolean
+        default: false
 
 jobs:
   insights:
@@ -67,6 +71,13 @@ jobs:
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           DRY_RUN: ${{ vars.DRY_RUN }}
+          # force=true bypasses the send-dedupe state for this run only.
+          # The value is a single space (config strips it to empty, which
+          # disables state) because an empty string in a GitHub `&& ||`
+          # expression is falsy and would fall through to the default.
+          INSIGHTS_STATE_FILE: >-
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.force == true)
+                && ' ' || 'state/insights.json' }}
           # Alert thresholds (optional repo variables; blank = defaults).
           INSIGHTS_MOVE_ALERT_PCT: ${{ vars.INSIGHTS_MOVE_ALERT_PCT }}
           INSIGHTS_MOVE_ALERT_DOLLARS: ${{ vars.INSIGHTS_MOVE_ALERT_DOLLARS }}
