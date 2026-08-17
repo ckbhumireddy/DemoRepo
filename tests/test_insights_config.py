@@ -12,7 +12,9 @@ def test_defaults_from_empty_env():
         cfg = InsightsConfig.from_env()
     assert cfg.insights_state_file == "state/insights.json"
     assert cfg.insights_move_alert_pct == 5.0
+    assert cfg.insights_move_alert_dollars == 5000.0
     assert cfg.insights_portfolio_alert_pct == 2.0
+    assert cfg.insights_portfolio_alert_dollars == 15000.0
     assert cfg.insights_max_weight_pct == 20.0
     assert cfg.insights_vol_spike_mult == 2.0
     assert cfg.insights_event_days == 7
@@ -23,7 +25,9 @@ def test_defaults_from_empty_env():
 def test_env_overrides():
     env = {
         "INSIGHTS_MOVE_ALERT_PCT": "3.5",
+        "INSIGHTS_MOVE_ALERT_DOLLARS": "2500",
         "INSIGHTS_PORTFOLIO_ALERT_PCT": "1.0",
+        "INSIGHTS_PORTFOLIO_ALERT_DOLLARS": "7500",
         "INSIGHTS_MAX_WEIGHT_PCT": "25",
         "INSIGHTS_EVENT_DAYS": "10",
         "PORTFOLIO_JSON": '{"positions": []}',
@@ -33,7 +37,9 @@ def test_env_overrides():
     with mock.patch.dict(os.environ, env, clear=True):
         cfg = InsightsConfig.from_env()
     assert cfg.insights_move_alert_pct == 3.5
+    assert cfg.insights_move_alert_dollars == 2500.0
     assert cfg.insights_portfolio_alert_pct == 1.0
+    assert cfg.insights_portfolio_alert_dollars == 7500.0
     assert cfg.insights_max_weight_pct == 25.0
     assert cfg.insights_event_days == 10
     assert cfg.portfolio_json == '{"positions": []}'

@@ -27,9 +27,12 @@ class InsightsConfig(Config):
     # cache persists it. Empty disables dedupe (every run sends).
     insights_state_file: str = "state/insights.json"
 
-    # Midday alert thresholds (absolute day-move percentages).
-    insights_move_alert_pct: float = 5.0        # per position
-    insights_portfolio_alert_pct: float = 2.0   # whole portfolio
+    # Midday alert thresholds. A percentage OR a dollar amount triggers:
+    # a huge position can lose real money on a small percent move.
+    insights_move_alert_pct: float = 5.0            # per position, day %
+    insights_move_alert_dollars: float = 5000.0     # per position, day P&L
+    insights_portfolio_alert_pct: float = 2.0       # whole portfolio, day %
+    insights_portfolio_alert_dollars: float = 15000.0  # portfolio, day P&L
 
     # EOD watch-item thresholds.
     insights_max_weight_pct: float = 20.0   # concentration warning
@@ -57,8 +60,14 @@ class InsightsConfig(Config):
                 "INSIGHTS_STATE_FILE", "state/insights.json"
             ).strip(),
             insights_move_alert_pct=_get_float("INSIGHTS_MOVE_ALERT_PCT", 5.0),
+            insights_move_alert_dollars=_get_float(
+                "INSIGHTS_MOVE_ALERT_DOLLARS", 5000.0
+            ),
             insights_portfolio_alert_pct=_get_float(
                 "INSIGHTS_PORTFOLIO_ALERT_PCT", 2.0
+            ),
+            insights_portfolio_alert_dollars=_get_float(
+                "INSIGHTS_PORTFOLIO_ALERT_DOLLARS", 15000.0
             ),
             insights_max_weight_pct=_get_float("INSIGHTS_MAX_WEIGHT_PCT", 20.0),
             insights_vol_spike_mult=_get_float("INSIGHTS_VOL_SPIKE_MULT", 2.0),

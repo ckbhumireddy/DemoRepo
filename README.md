@@ -237,8 +237,9 @@ JSON document you maintain) and emails rule-based insights:
   watch items with soft suggestions (concentration, volatility spikes, big
   loss days, positions far under water, winner concentration creep).
 - **Midday alert** (~12:30 ET): sent only when a position moves more than
-  5% or the portfolio more than 2% (thresholds configurable via
-  `INSIGHTS_*` env vars).
+  5% or +/-$5,000 on the day, or the portfolio more than 2% or +/-$15,000
+  (percent OR dollars; thresholds configurable via `INSIGHTS_*` env vars
+  or repository variables).
 
 Market data comes from Schwab (quotes and history) with automatic Yahoo
 fallback. Holdings never live in the repository.
