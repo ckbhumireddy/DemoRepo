@@ -29,7 +29,7 @@ def _position(pnl=612.0):
         "opened_at": "2026-08-17T19:35:00+00:00", "opened_phase": "entry",
         "signals": {"verdict": "rich", "bias": "neutral",
                     "implied_move_pct": 8.0, "ratio": 1.5,
-                    "atm_spread_pct": 2.0},
+                    "iv_rank": 0.62, "atm_spread_pct": 2.0},
         "status": "closed", "close_date": (EVENT + dt.timedelta(days=1)).isoformat(),
         "closed_at": None, "close_value": -0.08, "close_method": "chain",
         "realized_pnl": pnl,
@@ -92,6 +92,7 @@ def test_open_email_contents():
     assert "sell put 95 exp 2026-08-21 @ $1.30" in " ".join(text.split())
     assert "Net credit $1.20/share" in text
     assert "ratio 1.50, rich" in text
+    assert "IV rank 62 (proxy)" in text
     assert "TGT" in html and "risk" in html
 
 

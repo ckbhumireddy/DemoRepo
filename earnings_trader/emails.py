@@ -62,6 +62,8 @@ def _rationale(d: TradeDecision) -> str:
                 else f" ({d.implied.verdict})"
             )
         )
+    if d.iv_rank is not None:
+        parts.append(f"IV rank {d.iv_rank.iv_rank * 100:.0f} (proxy)")
     if d.trend is not None:
         parts.append(f"trend {d.trend.bias}")
     return " · ".join(parts)
@@ -75,6 +77,8 @@ def _pos_rationale(pos: dict) -> str:
         if s.get("ratio") is not None:
             line += f" (ratio {s['ratio']:.2f}, {s.get('verdict')})"
         parts.append(line)
+    if s.get("iv_rank") is not None:
+        parts.append(f"IV rank {s['iv_rank'] * 100:.0f} (proxy)")
     if s.get("bias"):
         parts.append(f"trend {s['bias']}")
     return " · ".join(parts)

@@ -11,8 +11,11 @@ from __future__ import annotations
 import datetime as dt
 from typing import Dict, List, Optional
 
+import math
+
 from earnings_analyzer.models import (
     ImpliedMove,
+    IVRank,
     LiquidityReport,
     OptionChain,
     OptionContract,
@@ -212,6 +215,75 @@ def screen_liquidity(
         atm_spread_pct=round(spread, 2) if spread is not None else None,
         tradeable=not reasons,
         reasons=reasons,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# IV rank (proxy: current IV vs the trailing realized-vol range — free feeds
+# expose no implied-vol history, so realized vol stands in for the range)
+# --------------------------------------------------------------------------- #
+TRADING_DAYS = 252
+
+
+def _log_returns(closes: List[float]) -> List[float]:
+    out: List[float] = []
+    for prev, cur in zip(closes, closes[1:]):
+        if prev > 0 and cur > 0:
+            out.append(math.log(cur / prev))
+    return out
+
+
+def _stdev(xs: List[float]) -> float:
+    n = len(xs)
+    if n < 2:
+        return 0.0
+    mean = sum(xs) / n
+    var = sum((x - mean) ** 2 for x in xs) / (n - 1)
+    return math.sqrt(var)
+
+
+def _realized_vol_series(closes: List[float], window: int = 21) -> List[float]:
+    rets = _log_returns(closes)
+    if len(rets) < window:
+        if len(rets) >= 2:
+            return [_stdev(rets) * math.sqrt(TRADING_DAYS)]
+        return []
+    return [
+        _stdev(rets[i - window:i]) * math.sqrt(TRADING_DAYS)
+        for i in range(window, len(rets) + 1)
+    ]
+
+
+def compute_iv_rank(
+    ticker: str,
+    current_iv: Optional[float],
+    prices: List[PriceBar],
+    *,
+    window: int = 21,
+) -> Optional[IVRank]:
+    """Rank ``current_iv`` against the trailing realized-vol range."""
+    if current_iv is None or current_iv <= 0 or len(prices) < window + 2:
+        return None
+    closes = [b.close for b in sorted(prices, key=lambda b: b.day)]
+    hv = [v for v in _realized_vol_series(closes, window=window) if v > 0]
+    if not hv:
+        return None
+    hv_low, hv_high = min(hv), max(hv)
+    span = hv_high - hv_low
+    if span <= 0:
+        rank = 1.0 if current_iv >= hv_high else 0.0
+    else:
+        rank = max(0.0, min(1.0, (current_iv - hv_low) / span))
+    below = sum(1 for v in hv if v <= current_iv)
+    return IVRank(
+        ticker=ticker.upper(),
+        current_iv=round(current_iv, 4),
+        hv_low=round(hv_low, 4),
+        hv_high=round(hv_high, 4),
+        iv_rank=round(rank, 3),
+        iv_percentile=round(below / len(hv), 3),
+        window_days=window,
+        sample_size=len(hv),
     )
 
 
