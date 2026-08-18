@@ -55,6 +55,39 @@ def test_option_views_value_day_and_total():
     )
 
 
+def test_feed_day_change_beats_mid_minus_close():
+    """The feed's netChange matches broker math; mid-minus-close mixes a
+    live mid with a stale last-trade close and misfires."""
+    chain = OptionChain(ticker="SNDK", expiry=EXPIRY, underlying_price=250.0)
+    chain.calls.append(OptionContract(
+        contract_symbol="x", option_type="call", strike=1500.0, expiry=EXPIRY,
+        bid=640.0, ask=641.4, close_price=720.51, day_change=-131.30,
+    ))
+    provider = InMemoryProvider()
+    provider.add_option_chain(chain)
+    views = build_option_views(
+        [OptionPosition("SNDK", EXPIRY, "call", 1500.0, 1, 695.91)],
+        provider, TODAY,
+    )
+    assert views[0].day_pnl == -13130.0     # from day_change, not mid-close
+
+
+def test_partial_day_data_yields_no_book_day_pnl():
+    """One leg without a day figure must not flip the spread's sign."""
+    provider = InMemoryProvider()
+    chain = _chain({("call", 1750.0): (575.30, 680.0)})
+    # Long 1500 leg valued but with NO close/day data.
+    chain.calls.append(OptionContract(
+        contract_symbol="x", option_type="call", strike=1500.0, expiry=EXPIRY,
+        bid=640.70, ask=640.70,
+    ))
+    provider.add_option_chain(chain)
+    summary = OptionsSummary(build_option_views(_positions(), provider, TODAY))
+    assert len(summary.valued) == 2
+    assert summary.day_pnl is None          # not the misleading +10,470
+    assert summary.day_missing == 1
+
+
 def test_unquoted_and_expired_stay_listed_with_notes():
     provider = InMemoryProvider()   # no chains at all
     past = OptionPosition("OLD", TODAY - dt.timedelta(days=5), "call", 10.0, 1)

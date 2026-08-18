@@ -42,6 +42,7 @@ class OptionContract:
     ask: Optional[float] = None
     last: Optional[float] = None
     close_price: Optional[float] = None   # previous session's close
+    day_change: Optional[float] = None    # feed's own net change on the day
     implied_volatility: Optional[float] = None   # annualized decimal, 0.35 = 35%
     volume: Optional[float] = None
     open_interest: Optional[float] = None

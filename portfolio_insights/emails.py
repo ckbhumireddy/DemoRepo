@@ -232,7 +232,7 @@ def render_eod_email(
             + (
                 f" (day {portfolio.options_day_pnl:+,.0f})"
                 if portfolio.options_day_pnl is not None
-                else ""
+                else " (day P&L unavailable — excluded from the headline)"
             )
         )
     if portfolio.unquoted:
@@ -458,6 +458,12 @@ def render_midday_email(
         + (
             f" | SPY {_pct(portfolio.spy_day_pct)}"
             if portfolio.spy_day_pct is not None
+            else ""
+        )
+        + (
+            " | options day excluded (incomplete quotes)"
+            if portfolio.options_value is not None
+            and portfolio.options_day_pnl is None
             else ""
         )
     )
