@@ -173,6 +173,7 @@ def render_eod_email(
     fetch_error: Optional[str] = None,
     other_note: Optional[str] = None,
     iv_context=None,
+    options_summary=None,
 ) -> Tuple[str, str, str]:
     if fetch_error:
         subject = f"[Portfolio] EOD — {today.strftime('%a %b %d')}: could not load the portfolio"
@@ -225,6 +226,15 @@ def render_eod_email(
         ),
         f"Total P&L vs cost {_money(portfolio.total_pnl)}",
     ]
+    if portfolio.options_value is not None:
+        lines.append(
+            f"Options book {_money(portfolio.options_value)}"
+            + (
+                f" (day {portfolio.options_day_pnl:+,.0f})"
+                if portfolio.options_day_pnl is not None
+                else ""
+            )
+        )
     if portfolio.unquoted:
         lines.append(
             f"{portfolio.unquoted} position(s) had no quote and are excluded "
@@ -257,6 +267,24 @@ def render_eod_email(
         for v in p_gain + p_lose:
             pnl = f"  ({v.day_pnl:+,.0f})" if v.day_pnl is not None else ""
             lines.append(f"  {v.ticker:<7}{_pct(v.day_change_pct):>10}{pnl}")
+    if options_summary is not None and options_summary.views:
+        lines += ["", "Options positions:"]
+        lines.append(
+            f"  {'':<20}{'QTY':>5}  {'MARK':>8}  {'VALUE':>10}  "
+            f"{'DAY P&L':>9}  {'TOTAL':>10}"
+        )
+        for v in options_summary.views:
+            if v.market_value is None:
+                lines.append(f"  {v.label:<20}{v.position.quantity:>+5.0f}  "
+                             f"— {v.note}")
+                continue
+            day_s = f"{v.day_pnl:+,.0f}" if v.day_pnl is not None else "—"
+            total_s = f"{v.total_pnl:+,.0f}" if v.total_pnl is not None else "—"
+            lines.append(
+                f"  {v.label:<20}{v.position.quantity:>+5.0f}  "
+                f"{v.mark:>8,.2f}  {_money0(v.market_value):>10}  "
+                f"{day_s:>9}  {total_s:>10}"
+            )
     if iv_context:
         lines += ["", "Options premium, top positions (IV rank, proxy):"]
         for r in iv_context:
@@ -325,6 +353,60 @@ def render_eod_email(
                 for v in p_gain + p_lose
             ]
         cards.append(_card("Biggest movers", mover_rows))
+    if options_summary is not None and options_summary.views:
+        head = (
+            "<tr>"
+            f"<th style='{_TH};text-align:left'>Contract</th>"
+            f"<th style='{_TH}'>Qty</th>"
+            f"<th style='{_TH}'>Mark</th>"
+            f"<th style='{_TH}'>Value</th>"
+            f"<th style='{_TH}'>Day P&L</th>"
+            f"<th style='{_TH}'>Total P&L</th>"
+            "</tr>"
+        )
+        opt_rows = []
+        for v in options_summary.views:
+            if v.market_value is None:
+                opt_rows.append(
+                    "<tr>"
+                    f"<td style='{_TD};text-align:left'><b>{html.escape(v.label)}</b></td>"
+                    f"<td style='{_TD}'>{v.position.quantity:+.0f}</td>"
+                    f"<td style='{_TD};text-align:left' colspan='4'>"
+                    f"<span style='color:#b26a00'>{html.escape(v.note or '')}</span>"
+                    "</td></tr>"
+                )
+                continue
+            opt_rows.append(
+                "<tr>"
+                f"<td style='{_TD};text-align:left'><b>{html.escape(v.label)}</b></td>"
+                f"<td style='{_TD}'>{v.position.quantity:+.0f}</td>"
+                f"<td style='{_TD}'>{v.mark:,.2f}</td>"
+                f"<td style='{_TD}'>{_money0(v.market_value)}</td>"
+                f"<td style='{_TD};color:{_move_color(v.day_pnl)}'>"
+                + (f"{v.day_pnl:+,.0f}" if v.day_pnl is not None else "—")
+                + "</td>"
+                f"<td style='{_TD};color:{_move_color(v.total_pnl)}'>"
+                + (f"{v.total_pnl:+,.0f}" if v.total_pnl is not None else "—")
+                + "</td></tr>"
+            )
+        totals = (
+            f"Book value <b>{_money0(options_summary.total_value)}</b>"
+            + (
+                f" &middot; day <b>{options_summary.day_pnl:+,.0f}</b>"
+                if options_summary.day_pnl is not None
+                else ""
+            )
+        )
+        cards.append(
+            "<div style='border:1px solid #d0d0d0;border-radius:8px;"
+            "padding:10px 14px;margin:0 0 10px'>"
+            "<div style='font-size:15px;margin-bottom:6px'><b>Options positions</b></div>"
+            "<div style='overflow-x:auto'>"
+            "<table style='border-collapse:collapse;width:100%;font-size:13px'>"
+            + head + "".join(opt_rows) + "</table></div>"
+            + _row(totals)
+            + "</div>"
+        )
     if iv_context:
         cards.append(_card("Options premium, top positions (IV rank, proxy)", [
             _row(
@@ -367,6 +449,7 @@ def render_midday_email(
 
     by_ticker = {v.ticker: v for v in views}
     position_triggers = [t for t in triggers if t.kind == "position"]
+    option_trigs = [t for t in triggers if t.kind == "option"]
     portfolio_triggered = any(t.kind == "portfolio" for t in triggers)
 
     portfolio_line = (
@@ -398,6 +481,11 @@ def render_midday_email(
             lines.append(
                 f"  {t.ticker:<7}{day:>8}  {pnl:>9}  {value:>10}  {w:>6}"
             )
+        lines.append("")
+    if option_trigs:
+        lines.append("Option triggers (day P&L):")
+        for t in option_trigs:
+            lines.append(f"  {t.detail}")
         lines.append("")
     lines += [
         ("PORTFOLIO TRIGGER: " if portfolio_triggered else "") + portfolio_line,
@@ -443,6 +531,12 @@ def render_midday_email(
             "<table style='border-collapse:collapse;width:100%;font-size:13px'>"
             + head + "".join(rows) + "</table></div>"
         )
+    options_html = ""
+    if option_trigs:
+        options_html = _card("Option triggers (day P&L)", [
+            _row(f"<b>{html.escape(t.detail)}</b>", RED)
+            for t in option_trigs
+        ])
     portfolio_html = _row(
         ("<b>PORTFOLIO TRIGGER:</b> " if portfolio_triggered else "")
         + html.escape(portfolio_line),
@@ -453,6 +547,7 @@ def render_midday_email(
         + "<h2 style='margin:0 0 4px'>Portfolio midday alert</h2>"
         + f"<p style='margin:0 0 12px;color:#555'>{html.escape(_weekday(today))}</p>"
         + table_html
+        + options_html
         + portfolio_html
         + f"<p style='margin-top:16px;color:#777;font-size:12px'>{html.escape(DISCLAIMER)}</p>"
         + "</div>"

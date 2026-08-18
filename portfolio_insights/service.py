@@ -23,13 +23,16 @@ from earnings_notifier.notifier import EmailNotifier
 
 from .config import InsightsConfig
 from .emails import render_eod_email, render_midday_email
+from .options import OptionsSummary, build_option_views
 from .portfolio import load_portfolio
 from .quotes import fetch_quotes
 from .signals import (
+    apply_options,
     build_views,
     check_alert_triggers,
     earnings_ahead,
     generate_insights,
+    option_triggers,
     volatility_spikes,
 )
 from .state import (
@@ -127,6 +130,19 @@ def run_insights(
     )
     views, portfolio = build_views(snapshot, quotes)
 
+    # Options book: valued from live chains in both modes; folded into the
+    # portfolio totals so the headline matches the broker's.
+    option_summary = None
+    if snapshot.options:
+        if provider is None:
+            from earnings_analyzer.schwab import build_provider
+
+            provider = build_provider(config, today=today)
+        option_summary = OptionsSummary(
+            build_option_views(snapshot.options, provider, today)
+        )
+        apply_options(portfolio, option_summary)
+
     if mode == "midday":
         triggers = check_alert_triggers(
             views,
@@ -136,6 +152,11 @@ def run_insights(
             move_alert_dollars=config.insights_move_alert_dollars,
             portfolio_alert_dollars=config.insights_portfolio_alert_dollars,
         )
+        if option_summary is not None:
+            triggers += option_triggers(
+                option_summary.views,
+                move_alert_dollars=config.insights_move_alert_dollars,
+            )
         keys = [alert_key(today, t.ticker, t.kind) for t in triggers]
         fresh = [
             (t, k) for t, k in zip(triggers, keys)
@@ -236,7 +257,8 @@ def run_insights(
         move_alert_pct=config.insights_move_alert_pct,
     )
     subject, text, html_body = render_eod_email(
-        views, portfolio, insights, today, iv_context=iv_context
+        views, portfolio, insights, today, iv_context=iv_context,
+        options_summary=option_summary,
     )
     notifier.send(subject, text, html_body)
     if not config.dry_run and config.insights_state_file:

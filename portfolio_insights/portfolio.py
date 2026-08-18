@@ -40,9 +40,28 @@ class Position:
     cost_basis: Optional[float] = None   # per share
 
 
+@dataclass(frozen=True)
+class OptionPosition:
+    underlying: str
+    expiry: "object"                     # dt.date
+    option_type: str                     # "call" | "put"
+    strike: float
+    quantity: float                      # contracts; negative = short
+    cost_basis: Optional[float] = None   # per share (premium)
+
+    @property
+    def label(self) -> str:
+        right = "C" if self.option_type == "call" else "P"
+        return (
+            f"{self.underlying} ${self.strike:g}{right} "
+            f"{self.expiry.strftime('%b %y')}"
+        )
+
+
 @dataclass
 class PortfolioSnapshot:
     positions: List[Position] = field(default_factory=list)
+    options: List[OptionPosition] = field(default_factory=list)
     cash: Optional[float] = None
     source: str = ""                      # "env" | "file:<path>"
     fetch_error: Optional[str] = None
@@ -92,6 +111,48 @@ def parse_portfolio(document, source: str = "") -> PortfolioSnapshot:
         snapshot.positions.append(
             Position(ticker=ticker, quantity=slot["qty"], cost_basis=cost_basis)
         )
+
+    # Options: merge identical contracts across accounts (weighted cost).
+    import datetime as _dt
+
+    merged_opts = {}
+    for row in document.get("options") or []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            underlying = str(row["underlying"]).strip().upper()
+            expiry = _dt.date.fromisoformat(str(row["expiry"]))
+            option_type = str(row["option_type"])
+            strike = float(row["strike"])
+            qty = _as_float(row.get("quantity"))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not underlying or option_type not in ("call", "put") or not qty:
+            continue
+        cost = _as_float(row.get("cost_basis"))
+        key = (underlying, expiry, option_type, strike)
+        slot = merged_opts.setdefault(
+            key, {"qty": 0.0, "cost": 0.0, "known": True}
+        )
+        slot["qty"] += qty
+        if cost is None:
+            slot["known"] = False
+        else:
+            slot["cost"] += cost * qty
+    for (underlying, expiry, option_type, strike), slot in merged_opts.items():
+        if slot["qty"] == 0:
+            continue
+        snapshot.options.append(OptionPosition(
+            underlying=underlying,
+            expiry=expiry,
+            option_type=option_type,
+            strike=strike,
+            quantity=slot["qty"],
+            cost_basis=(
+                round(slot["cost"] / slot["qty"], 4) if slot["known"] else None
+            ),
+        ))
+    snapshot.options.sort(key=lambda o: (o.underlying, o.expiry, o.strike))
     if not snapshot.positions and snapshot.fetch_error is None:
         # An empty portfolio is legal; the emails say so explicitly.
         pass

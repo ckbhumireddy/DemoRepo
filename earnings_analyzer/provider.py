@@ -100,6 +100,13 @@ def contracts_from_frame(frame, option_type: str, expiry: dt.date) -> List[Optio
         if strike is None:
             continue
         itm = row.get("inTheMoney")
+        last = _as_float(row.get("lastPrice"))
+        change = _as_float(row.get("change"))
+        close_price = (
+            round(last - change, 4)
+            if last is not None and change is not None
+            else None
+        )
         contracts.append(
             OptionContract(
                 contract_symbol=str(row.get("contractSymbol", "")),
@@ -108,7 +115,8 @@ def contracts_from_frame(frame, option_type: str, expiry: dt.date) -> List[Optio
                 expiry=expiry,
                 bid=_as_float(row.get("bid")),
                 ask=_as_float(row.get("ask")),
-                last=_as_float(row.get("lastPrice")),
+                last=last,
+                close_price=close_price,
                 implied_volatility=_as_float(row.get("impliedVolatility")),
                 volume=_as_float(row.get("volume")),
                 open_interest=_as_float(row.get("openInterest")),
