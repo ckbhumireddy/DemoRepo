@@ -366,43 +366,94 @@ def render_midday_email(
     subject = f"[Portfolio] Midday alert — {details}"
 
     by_ticker = {v.ticker: v for v in views}
-    lines = [f"Portfolio midday alert ({_weekday(today)})", ""]
-    rows = []
-    for t in triggers:
-        lines.append(f"  {t.detail}")
-        row = f"<b>{html.escape(t.detail)}</b>"
-        v = by_ticker.get(t.ticker)
-        if v is not None and v.market_value is not None:
-            context = (
-                f" — value {_money(v.market_value)}, "
-                f"{v.weight_pct:.1f}% of portfolio"
-                if v.weight_pct is not None
-                else f" — value {_money(v.market_value)}"
-            )
-            lines[-1] += context
-            row += html.escape(context)
-        rows.append(_row(row, RED))
-    lines += [
-        "",
+    position_triggers = [t for t in triggers if t.kind == "position"]
+    portfolio_triggered = any(t.kind == "portfolio" for t in triggers)
+
+    portfolio_line = (
         f"Portfolio day {_pct(portfolio.day_change_pct)}"
         f" ({_money(portfolio.day_pnl)})"
         + (
             f" | SPY {_pct(portfolio.spy_day_pct)}"
             if portfolio.spy_day_pct is not None
             else ""
-        ),
+        )
+    )
+
+    # ---- text: aligned columns ----
+    lines = [f"Portfolio midday alert ({_weekday(today)})", ""]
+    if position_triggers:
+        lines.append(
+            f"  {'':<7}{'DAY':>8}  {'DAY P&L':>9}  {'VALUE':>10}  {'WT':>6}"
+        )
+        for t in position_triggers:
+            v = by_ticker.get(t.ticker)
+            day = _pct(v.day_change_pct) if v else "—"
+            pnl = f"{v.day_pnl:+,.0f}" if v and v.day_pnl is not None else "—"
+            value = _money0(v.market_value) if v else "—"
+            w = (
+                f"{v.weight_pct:.1f}%"
+                if v and v.weight_pct is not None
+                else "—"
+            )
+            lines.append(
+                f"  {t.ticker:<7}{day:>8}  {pnl:>9}  {value:>10}  {w:>6}"
+            )
+        lines.append("")
+    lines += [
+        ("PORTFOLIO TRIGGER: " if portfolio_triggered else "") + portfolio_line,
         "",
         DISCLAIMER,
     ]
     text = "\n".join(lines)
+
+    # ---- html: real table ----
+    table_html = ""
+    if position_triggers:
+        head = (
+            "<tr>"
+            f"<th style='{_TH};text-align:left'>Ticker</th>"
+            f"<th style='{_TH}'>Day</th>"
+            f"<th style='{_TH}'>Day P&L</th>"
+            f"<th style='{_TH}'>Value</th>"
+            f"<th style='{_TH}'>Weight</th>"
+            "</tr>"
+        )
+        rows = []
+        for t in position_triggers:
+            v = by_ticker.get(t.ticker)
+            color = _move_color(v.day_change_pct if v else None)
+            rows.append(
+                "<tr>"
+                f"<td style='{_TD};text-align:left'><b>{html.escape(t.ticker)}</b></td>"
+                f"<td style='{_TD};color:{color};font-weight:bold'>"
+                f"{_pct(v.day_change_pct) if v else '—'}</td>"
+                f"<td style='{_TD};color:{color}'>"
+                f"{f'{v.day_pnl:+,.0f}' if v and v.day_pnl is not None else '—'}</td>"
+                f"<td style='{_TD}'>{_money0(v.market_value) if v else '—'}</td>"
+                f"<td style='{_TD}'>"
+                + (
+                    f"{v.weight_pct:.1f}%"
+                    if v and v.weight_pct is not None
+                    else "—"
+                )
+                + "</td></tr>"
+            )
+        table_html = (
+            "<div style='overflow-x:auto'>"
+            "<table style='border-collapse:collapse;width:100%;font-size:13px'>"
+            + head + "".join(rows) + "</table></div>"
+        )
+    portfolio_html = _row(
+        ("<b>PORTFOLIO TRIGGER:</b> " if portfolio_triggered else "")
+        + html.escape(portfolio_line),
+        RED if portfolio_triggered else "#444",
+    )
     html_body = (
         _WRAP
-        + "<h2 style='margin:0 0 8px'>Portfolio midday alert</h2>"
-        + _card("Triggers", rows)
-        + _row(
-            f"Portfolio day {_pct(portfolio.day_change_pct)}"
-            f" ({_money(portfolio.day_pnl)})"
-        )
+        + "<h2 style='margin:0 0 4px'>Portfolio midday alert</h2>"
+        + f"<p style='margin:0 0 12px;color:#555'>{html.escape(_weekday(today))}</p>"
+        + table_html
+        + portfolio_html
         + f"<p style='margin-top:16px;color:#777;font-size:12px'>{html.escape(DISCLAIMER)}</p>"
         + "</div>"
     )
