@@ -268,3 +268,24 @@ America/New_York, same PAT, same headers) POSTing to
 - "insights-eod":    weekdays 16:35, body `{"ref":"master","inputs":{"mode":"eod"}}`
 
 The workflow's UTC crons are fallback only.
+
+## IV Rank Scanner (iv_scanner)
+
+Daily email at the market open: the top 50 S&P 500 names by IV rank
+(current ~30-day ATM implied volatility vs the stock's own 1-year
+realized-vol range — a proxy), with your portfolio holdings highlighted
+and rule-based options-play ideas (covered calls on rich held names,
+earnings premium candidates, premium-selling setups, cheap protection on
+low-rank holdings). Quotes are from the prior close.
+
+The full S&P 500 sweep needs Schwab market data (~9 minutes, rate-paced);
+without it the scan degrades to portfolio + this week's reporters via
+Yahoo. Trigger: add a cron-job.org job "ivscan" (weekdays 09:00,
+America/New_York, same PAT/headers) POSTing
+`{"ref":"master","inputs":{}}` to
+`.../actions/workflows/iv-scanner.yml/dispatches`; the workflow's UTC
+cron is fallback only.
+
+```powershell
+python -m iv_scanner --dry-run --universe portfolio   # fast local preview
+```

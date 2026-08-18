@@ -211,7 +211,8 @@ def run_insights(
                 rank = compute_iv_rank(v.ticker, atm_iv, year_bars)
             except Exception:  # noqa: BLE001
                 rank = None
-            if rank is not None:
+            # Cash-like instruments (realized vol ~0) rank meaninglessly.
+            if rank is not None and rank.hv_high >= 0.05:
                 iv_context.append(rank)
         if earnings_provider is None:
             from earnings_notifier.earnings import YFinanceProvider
