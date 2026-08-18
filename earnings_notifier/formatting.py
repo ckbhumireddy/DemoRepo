@@ -41,6 +41,13 @@ def _fmt_market_cap(value: float | None) -> str:
     return f"${value:,.0f}"
 
 
+def _fmt_iv_rank(e: EarningsEvent) -> str | None:
+    """"IV rank 62 (proxy)", or None when unavailable."""
+    if e.iv_rank is None:
+        return None
+    return f"IV rank {e.iv_rank * 100:.0f} (proxy)"
+
+
 def _fmt_short_interest(e: EarningsEvent) -> str | None:
     """"Short 3.7% of float (4.3d to cover)", or None when unavailable."""
     if e.short_pct_float is None:
@@ -125,11 +132,13 @@ def render_text(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
             f"    Reports {_weekday(e.date)}{timing}  (in {days} day(s)){flag}"
         )
         short = _fmt_short_interest(e)
+        iv = _fmt_iv_rank(e)
         lines.append(
             f"    Price {_fmt_price(e.price)}"
             f" | 52wk {_fmt_range(e.fifty_two_week_low, e.fifty_two_week_high)}"
             f" | Mkt cap {_fmt_market_cap(e.market_cap)}"
             + (f" | {short}" if short else "")
+            + (f" | {iv}" if iv else "")
         )
         last = _last_earnings_text(e)
         reaction = _reaction_text(e.last_reaction_pct)
@@ -199,13 +208,16 @@ def render_html(events: List[EarningsEvent], today: dt.date, lead_days: int) -> 
         short_html = (
             f" &nbsp;&middot;&nbsp; {html.escape(short)}" if short else ""
         )
+        iv = _fmt_iv_rank(e)
+        iv_html = f" &nbsp;&middot;&nbsp; {html.escape(iv)}" if iv else ""
         stats = (
             f"<div style='margin-top:6px'>"
             f"Price <b>{html.escape(_fmt_price(e.price))}</b>"
             f" &nbsp;&middot;&nbsp; 52wk "
             f"{html.escape(_fmt_range(e.fifty_two_week_low, e.fifty_two_week_high))}"
             f" &nbsp;&middot;&nbsp; Mkt cap "
-            f"<b>{html.escape(_fmt_market_cap(e.market_cap))}</b>{short_html}</div>"
+            f"<b>{html.escape(_fmt_market_cap(e.market_cap))}</b>{short_html}"
+            f"{iv_html}</div>"
         )
         last = _last_earnings_text(e)
         last_html = ""

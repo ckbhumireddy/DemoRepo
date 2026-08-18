@@ -40,6 +40,7 @@ class EarningsEvent:
     timing: Optional[str] = None  # "pre-market" | "after-market" | None (unknown)
     short_pct_float: Optional[float] = None  # 0.037 = 3.7% of float sold short
     short_ratio: Optional[float] = None      # days to cover at avg volume
+    iv_rank: Optional[float] = None          # 0-1; IV vs realized-vol range (proxy)
 
     def days_until(self, today: dt.date) -> int:
         return (self.date - today).days
@@ -294,6 +295,14 @@ class YFinanceProvider:
                 if value is not None:
                     updates[field] = value
 
+        # Options premium context: current ATM implied volatility ranked
+        # against the trailing realized-vol range (a proxy — free feeds have
+        # no IV history). High = premium rich; low = premium cheap.
+        if event.iv_rank is None:
+            rank = _iv_rank_proxy(yticker, updates.get("price") or event.price)
+            if rank is not None:
+                updates["iv_rank"] = rank
+
         # How did the market react to the last report? Compare the last close
         # before the earnings date with the first close after it.
         if event.last_earnings_date is not None and event.last_reaction_pct is None:
@@ -310,6 +319,68 @@ class YFinanceProvider:
                 updates["last_reaction_pct"] = reaction
 
         return dataclasses.replace(event, **updates) if updates else event
+
+
+def _atm_iv_from_frames(calls, puts, spot: float) -> Optional[float]:
+    """Average implied vol of the call+put rows nearest ``spot``."""
+    ivs = []
+    for frame in (calls, puts):
+        try:
+            if frame is None or frame.empty:
+                continue
+            idx = (frame["strike"] - spot).abs().idxmin()
+            iv = _as_float(frame.loc[idx, "impliedVolatility"])
+            if iv is not None and 0 < iv <= 10:
+                ivs.append(iv)
+        except Exception:  # noqa: BLE001
+            continue
+    return sum(ivs) / len(ivs) if ivs else None
+
+
+def _iv_rank_proxy(yticker, spot: Optional[float]) -> Optional[float]:
+    """0-1 rank of current ATM IV vs the trailing realized-vol range."""
+    import math
+
+    if not spot or spot <= 0:
+        return None
+    try:
+        expiries = yticker.options
+        if not expiries:
+            return None
+        chain = yticker.option_chain(expiries[0])
+        current_iv = _atm_iv_from_frames(chain.calls, chain.puts, spot)
+    except Exception:  # noqa: BLE001
+        return None
+    if current_iv is None:
+        return None
+    try:
+        closes = [
+            c for c in yticker.history(period="1y")["Close"].tolist() if c > 0
+        ]
+    except Exception:  # noqa: BLE001
+        return None
+    rets = [
+        math.log(b / a) for a, b in zip(closes, closes[1:]) if a > 0 and b > 0
+    ]
+    window = 21
+    if len(rets) < window + 2:
+        return None
+
+    def _stdev(xs):
+        mean = sum(xs) / len(xs)
+        return (sum((x - mean) ** 2 for x in xs) / (len(xs) - 1)) ** 0.5
+
+    hv = [
+        _stdev(rets[i - window:i]) * math.sqrt(252)
+        for i in range(window, len(rets) + 1)
+    ]
+    hv = [v for v in hv if v > 0]
+    if not hv:
+        return None
+    lo, hi = min(hv), max(hv)
+    if hi <= lo:
+        return 1.0 if current_iv >= hi else 0.0
+    return round(max(0.0, min(1.0, (current_iv - lo) / (hi - lo))), 3)
 
 
 def _classify_timing(value) -> Optional[str]:

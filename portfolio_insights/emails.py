@@ -156,6 +156,14 @@ def _positions_table(views: List[PositionView]) -> str:
 # --------------------------------------------------------------------------- #
 # EOD
 # --------------------------------------------------------------------------- #
+def _iv_note(rank: float) -> str:
+    if rank >= 0.7:
+        return "premium rich — covered calls and credit structures pay well"
+    if rank <= 0.3:
+        return "premium cheap — protective puts and collars are inexpensive"
+    return "premium mid-range"
+
+
 def render_eod_email(
     views: List[PositionView],
     portfolio: PortfolioView,
@@ -164,6 +172,7 @@ def render_eod_email(
     *,
     fetch_error: Optional[str] = None,
     other_note: Optional[str] = None,
+    iv_context=None,
 ) -> Tuple[str, str, str]:
     if fetch_error:
         subject = f"[Portfolio] EOD — {today.strftime('%a %b %d')}: could not load the portfolio"
@@ -248,6 +257,12 @@ def render_eod_email(
         for v in p_gain + p_lose:
             pnl = f"  ({v.day_pnl:+,.0f})" if v.day_pnl is not None else ""
             lines.append(f"  {v.ticker:<7}{_pct(v.day_change_pct):>10}{pnl}")
+    if iv_context:
+        lines += ["", "Options premium, top positions (IV rank, proxy):"]
+        for r in iv_context:
+            lines.append(
+                f"  {r.ticker:<7}{r.iv_rank * 100:>4.0f}  — {_iv_note(r.iv_rank)}"
+            )
     if insights:
         lines += ["", "Watch items & suggestions:"]
         for i in insights:
@@ -310,6 +325,14 @@ def render_eod_email(
                 for v in p_gain + p_lose
             ]
         cards.append(_card("Biggest movers", mover_rows))
+    if iv_context:
+        cards.append(_card("Options premium, top positions (IV rank, proxy)", [
+            _row(
+                f"<b>{html.escape(r.ticker)}</b> {r.iv_rank * 100:.0f}"
+                f" &middot; {html.escape(_iv_note(r.iv_rank))}"
+            )
+            for r in iv_context
+        ]))
     if insights:
         cards.append(_card("Watch items & suggestions", [
             _row(

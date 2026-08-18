@@ -32,6 +32,7 @@ def _chain(spot=100.0, oi=2000.0, volume=800.0, half_spread=0.05):
                     expiry=EXPIRY,
                     bid=mid - half_spread,
                     ask=mid + half_spread,
+                    implied_volatility=0.55,
                     volume=volume,
                     open_interest=oi,
                 )
@@ -59,8 +60,8 @@ def _provider(hist_moves, chain=None, surprises=None):
     provider = InMemoryProvider()
     bars = [
         PriceBar(day=TODAY - dt.timedelta(days=i), open=100, high=100,
-                 low=100, close=100.0)
-        for i in range(30, 0, -1)
+                 low=100, close=100.0 * (1.004 if i % 2 else 0.996))
+        for i in range(40, 0, -1)
     ]
     provider.add("T", quarters=_quarters(hist_moves, surprises), bars=bars)
     provider.add_option_chain(chain or _chain())
@@ -82,6 +83,7 @@ def test_rich_neutral_iron_condor():
     assert d.action == "open"
     assert d.strategy.strategy == "Iron condor"
     assert d.implied.verdict == "rich"
+    assert d.iv_rank is not None and 0.0 <= d.iv_rank.iv_rank <= 1.0
 
 
 def test_rich_bullish_put_credit_spread():

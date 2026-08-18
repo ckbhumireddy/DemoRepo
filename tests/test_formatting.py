@@ -94,6 +94,15 @@ def test_short_interest_hidden_when_unknown():
     assert "Short" not in text
 
 
+def test_iv_rank_shown_when_known():
+    events = [EarningsEvent("TGT", dt.date(2026, 8, 19), True, iv_rank=0.62)]
+    text = render_text(events, TODAY, 7)
+    html = render_html(events, TODAY, 7)
+    assert "IV rank 62 (proxy)" in text
+    assert "IV rank 62 (proxy)" in html
+    assert "IV rank" not in render_text(_events(), TODAY, 7)
+
+
 def test_html_marks_estimated_and_confirmed():
     html = render_html(_events(), TODAY, 7)
     assert "estimated" in html

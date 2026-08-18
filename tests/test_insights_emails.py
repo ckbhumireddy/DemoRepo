@@ -46,6 +46,27 @@ def test_eod_email_contents():
     assert "Portfolio EOD insights" in html and DISCLAIMER in html
 
 
+def test_eod_iv_context_card():
+    from earnings_analyzer.models import IVRank
+
+    views, portfolio = _views()
+    ranks = [
+        IVRank(ticker="MSFT", current_iv=0.22, hv_low=0.15, hv_high=0.45,
+               iv_rank=0.23, iv_percentile=0.2, window_days=21, sample_size=38),
+        IVRank(ticker="TGT", current_iv=0.55, hv_low=0.2, hv_high=0.6,
+               iv_rank=0.88, iv_percentile=0.9, window_days=21, sample_size=38),
+    ]
+    _, text, html = render_eod_email(views, portfolio, [], TODAY,
+                                     iv_context=ranks)
+    assert "Options premium, top positions" in text
+    assert "MSFT" in text and "premium cheap" in text
+    assert "TGT" in text and "premium rich" in text
+    assert "IV rank, proxy" in html
+
+    _, text_none, _ = render_eod_email(views, portfolio, [], TODAY)
+    assert "Options premium" not in text_none
+
+
 def test_eod_degraded_mode():
     subject, text, html = render_eod_email(
         [], None, [], TODAY, fetch_error="no portfolio source: x"

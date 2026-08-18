@@ -191,6 +191,7 @@ def open_from_decisions(
                 "bias": d.trend.bias if d.trend else "neutral",
                 "implied_move_pct": d.implied.implied_move_pct if d.implied else None,
                 "ratio": d.implied.ratio if d.implied else None,
+                "iv_rank": d.iv_rank.iv_rank if d.iv_rank else None,
                 "atm_spread_pct": d.liquidity.atm_spread_pct if d.liquidity else None,
             },
             "status": "open",

@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from earnings_analyzer.models import (
     ImpliedMove,
+    IVRank,
     LiquidityReport,
     PricedStrategy,
     TrendContext,
@@ -19,6 +20,7 @@ from earnings_analyzer.provider import MarketDataProvider
 from .analysis import (
     attach_reactions,
     compute_implied_move,
+    compute_iv_rank,
     compute_reaction_stats,
     compute_streak,
     compute_trend,
@@ -39,6 +41,7 @@ class TradeDecision:
     reasons: List[str] = field(default_factory=list)   # why skipped
     spot: Optional[float] = None
     implied: Optional[ImpliedMove] = None
+    iv_rank: Optional[IVRank] = None
     liquidity: Optional[LiquidityReport] = None
     trend: Optional[TrendContext] = None
     strategy: Optional[PricedStrategy] = None
@@ -97,6 +100,7 @@ def evaluate_candidate(
         d.reasons.extend(d.liquidity.reasons)
         return d
 
+    d.iv_rank = compute_iv_rank(ticker, chain.atm_iv(), bars)
     d.implied = compute_implied_move(
         chain,
         d.spot,

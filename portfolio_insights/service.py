@@ -158,6 +158,7 @@ def run_insights(
     # ---- EOD ----
     histories = {}
     events = []
+    iv_context = []
     if views:
         if provider is None:
             from earnings_analyzer.schwab import build_provider
@@ -168,6 +169,50 @@ def run_insights(
                 histories[ticker] = provider.price_history(ticker, days=60)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("No history for one ticker (%s)", type(exc).__name__)
+
+        # Options premium context for the largest holdings: IV rank (proxy)
+        # says whether hedges are cheap or covered calls pay well right now.
+        from earnings_analyzer.volatility import compute_iv_rank
+
+        top = [v for v in views if v.market_value is not None][:10]
+        for v in top:
+            try:
+                # ~30-day expiry: the IV30 convention. The nearest expiry
+                # sits at its structural low days before expiration and
+                # would rank everything at 0.
+                future = [
+                    e for e in provider.option_expiries(v.ticker)
+                    if (e - today).days >= 7
+                ]
+                expiry = (
+                    min(future, key=lambda e: abs((e - today).days - 30))
+                    if future
+                    else None
+                )
+                chain = (
+                    provider.option_chain(v.ticker, expiry) if expiry else None
+                )
+                atm_iv = chain.atm_iv() if chain else None
+                # Skip chains that barely trade — their IV is a fiction.
+                if chain is not None:
+                    oi = [
+                        c.open_interest
+                        for c in (chain.atm_call(), chain.atm_put())
+                        if c is not None and c.open_interest
+                    ]
+                    if not oi or max(oi) < 50:
+                        atm_iv = None
+                # Rank against a full year of realized vol — two volatile
+                # months alone would put every IV at the bottom of the range.
+                try:
+                    year_bars = provider.price_history(v.ticker, days=380)
+                except Exception:  # noqa: BLE001
+                    year_bars = histories.get(v.ticker, [])
+                rank = compute_iv_rank(v.ticker, atm_iv, year_bars)
+            except Exception:  # noqa: BLE001
+                rank = None
+            if rank is not None:
+                iv_context.append(rank)
         if earnings_provider is None:
             from earnings_notifier.earnings import YFinanceProvider
 
@@ -190,7 +235,7 @@ def run_insights(
         move_alert_pct=config.insights_move_alert_pct,
     )
     subject, text, html_body = render_eod_email(
-        views, portfolio, insights, today
+        views, portfolio, insights, today, iv_context=iv_context
     )
     notifier.send(subject, text, html_body)
     if not config.dry_run and config.insights_state_file:
