@@ -41,6 +41,7 @@ class OptionContract:
     bid: Optional[float] = None
     ask: Optional[float] = None
     last: Optional[float] = None
+    close_price: Optional[float] = None   # previous session's close
     implied_volatility: Optional[float] = None   # annualized decimal, 0.35 = 35%
     volume: Optional[float] = None
     open_interest: Optional[float] = None

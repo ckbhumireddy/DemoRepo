@@ -91,6 +91,7 @@ def _contract(row: dict, option_type: str, expiry: dt.date) -> Optional[OptionCo
         bid=row.get("bid"),
         ask=row.get("ask"),
         last=row.get("last"),
+        close_price=row.get("closePrice"),
         implied_volatility=iv,
         volume=row.get("totalVolume"),
         open_interest=row.get("openInterest"),

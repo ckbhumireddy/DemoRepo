@@ -47,13 +47,15 @@ class PositionView:
 
 @dataclass
 class PortfolioView:
-    total_value: Optional[float] = None    # positions + cash (where known)
+    total_value: Optional[float] = None    # positions + options + cash
     cash: Optional[float] = None
     day_pnl: Optional[float] = None
     day_change_pct: Optional[float] = None
     total_pnl: Optional[float] = None
     spy_day_pct: Optional[float] = None
     unquoted: int = 0                      # positions without a quote
+    options_value: Optional[float] = None
+    options_day_pnl: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +130,43 @@ def build_views(
         if total_pnls:
             portfolio.total_pnl = round(sum(total_pnls), 2)
     return views, portfolio
+
+
+def apply_options(portfolio: PortfolioView, options_summary) -> PortfolioView:
+    """Fold the options book into the portfolio totals (Fidelity's headline
+    includes options; ours should too)."""
+    if options_summary is None or not options_summary.valued:
+        return portfolio
+    portfolio.options_value = options_summary.total_value
+    portfolio.total_value = round(
+        (portfolio.total_value or 0.0) + options_summary.total_value, 2
+    )
+    opt_day = options_summary.day_pnl
+    if opt_day is not None:
+        portfolio.options_day_pnl = opt_day
+        day = (portfolio.day_pnl or 0.0) + opt_day
+        portfolio.day_pnl = round(day, 2)
+        prior = (portfolio.total_value or 0.0) - day
+        if prior > 0:
+            portfolio.day_change_pct = round(day / prior * 100.0, 2)
+    opt_total = options_summary.total_pnl
+    if opt_total is not None and portfolio.total_pnl is not None:
+        portfolio.total_pnl = round(portfolio.total_pnl + opt_total, 2)
+    return portfolio
+
+
+def option_triggers(option_views, *, move_alert_dollars: float) -> List[AlertTrigger]:
+    """Options alert on dollars only — their daily percent moves are
+    routinely double-digit, so a percent gate would fire constantly."""
+    out: List[AlertTrigger] = []
+    for v in option_views:
+        if v.day_pnl is not None and abs(v.day_pnl) >= move_alert_dollars:
+            out.append(AlertTrigger(
+                kind="option",
+                ticker=v.label,
+                detail=f"{v.label} {v.day_pnl:+,.0f}",
+            ))
+    return out
 
 
 def volatility_spikes(

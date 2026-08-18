@@ -25,12 +25,35 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime as dt
 import json
+import re
 import sys
 from typing import Optional
 
 CASH_SYMBOLS = {"SPAXX", "FDRXX", "FZFXX", "FCASH", "CORE", "USD", "CASH"}
 CASH_DESCRIPTIONS = ("MONEY MARKET", "DEPOSIT SWEEP", "US DOLLARS")
+
+# Fidelity option symbols: -SNDK270917C1500 = SNDK, 2027-09-17, call, $1500.
+_OPTION_RE = re.compile(r"^-?([A-Z]+)(\d{6})([CP])([\d.]+)$")
+
+
+def parse_option_symbol(symbol: str) -> Optional[dict]:
+    m = _OPTION_RE.match(symbol.strip().lstrip("-"))
+    if not m:
+        return None
+    underlying, yymmdd, right, strike = m.groups()
+    try:
+        expiry = dt.datetime.strptime(yymmdd, "%y%m%d").date()
+        strike_f = float(strike)
+    except ValueError:
+        return None
+    return {
+        "underlying": underlying,
+        "expiry": expiry.isoformat(),
+        "option_type": "call" if right == "C" else "put",
+        "strike": strike_f,
+    }
 
 
 def _clean_float(raw) -> Optional[float]:
@@ -60,6 +83,7 @@ def _norm_row(row: dict) -> dict:
 
 def convert(csv_path: str) -> dict:
     positions = []
+    options = []
     skipped = []
     cash = 0.0
     cash_seen = False
@@ -88,7 +112,15 @@ def convert(csv_path: str) -> dict:
                     cash_seen = True
                 continue
             if symbol.startswith("-"):
-                skipped.append(f"option: {desc or symbol} x{quantity or 0:g}")
+                parsed = parse_option_symbol(symbol)
+                if parsed is None or quantity is None or quantity == 0:
+                    skipped.append(f"option (unparsed): {desc or symbol}")
+                    continue
+                cost = _clean_float(row.get("average cost basis"))
+                entry = {**parsed, "quantity": quantity}
+                if cost is not None:
+                    entry["cost_basis"] = cost
+                options.append(entry)
                 continue
             if any(ch.isdigit() for ch in base):
                 skipped.append(
@@ -106,6 +138,8 @@ def convert(csv_path: str) -> dict:
             positions.append(entry)
 
     document = {"positions": positions}
+    if options:
+        document["options"] = options
     if cash_seen:
         document["cash"] = round(cash, 2)
     document["_skipped"] = skipped  # informational only
@@ -125,6 +159,8 @@ def main() -> int:
         json.dump(document, fh, indent=2)
 
     print(f"Wrote {len(document['positions'])} position row(s) to {args.output}")
+    if "options" in document:
+        print(f"Options: {len(document['options'])} position(s) parsed")
     if "cash" in document:
         print(f"Cash (money market + pending): ${document['cash']:,.2f}")
     if skipped:

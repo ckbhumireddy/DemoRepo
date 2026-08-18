@@ -50,8 +50,18 @@ def test_convert_real_format(tmp_path):
         29643.76 + 1578.91 + 0.0 + 0.37 - 26186.57, 2
     )
 
+    options = document.get("options", [])
+    assert len(options) == 1
+    opt = options[0]
+    assert opt["underlying"] == "SNDK"
+    assert opt["expiry"] == "2027-09-17"
+    assert opt["option_type"] == "call"
+    assert opt["strike"] == 1500.0
+    assert opt["quantity"] == 1
+    assert opt["cost_basis"] == 695.91
+
     joined = "\n".join(skipped)
-    assert "SNDK SEP 17 2027" in joined                 # option excluded
+    assert "SNDK" not in joined                         # parsed, not skipped
     assert "VANG 500 INDEX TRUST" in joined             # CUSIP excluded
     assert "WESTERN ALLIANCE" in joined                 # CD excluded
     assert "BROKERAGELINK" not in joined                # wrapper silently dropped
