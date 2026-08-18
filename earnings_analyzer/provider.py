@@ -117,6 +117,7 @@ def contracts_from_frame(frame, option_type: str, expiry: dt.date) -> List[Optio
                 ask=_as_float(row.get("ask")),
                 last=last,
                 close_price=close_price,
+                day_change=change,
                 implied_volatility=_as_float(row.get("impliedVolatility")),
                 volume=_as_float(row.get("volume")),
                 open_interest=_as_float(row.get("openInterest")),

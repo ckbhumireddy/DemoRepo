@@ -73,7 +73,14 @@ def build_option_views(
             continue
         v.mark = round(mark, 4)
         v.market_value = round(mark * MULTIPLIER * pos.quantity, 2)
-        if contract.close_price is not None:
+        # Day P&L: prefer the feed's own net-change figure (the same math
+        # the broker shows). The mid-minus-close fallback mixes two price
+        # bases and misfires on illiquid contracts with stale last trades.
+        if contract.day_change is not None:
+            v.day_pnl = round(
+                contract.day_change * MULTIPLIER * pos.quantity, 2
+            )
+        elif contract.close_price is not None:
             v.day_pnl = round(
                 (mark - contract.close_price) * MULTIPLIER * pos.quantity, 2
             )
@@ -98,8 +105,19 @@ class OptionsSummary:
 
     @property
     def day_pnl(self) -> Optional[float]:
-        pnls = [v.day_pnl for v in self.valued if v.day_pnl is not None]
-        return round(sum(pnls), 2) if pnls else None
+        """None unless EVERY valued contract has a day figure.
+
+        A partial sum is worse than none: dropping one leg of a spread
+        (e.g. the losing SNDK leg) flips the whole book's sign.
+        """
+        pnls = [v.day_pnl for v in self.valued]
+        if not pnls or any(p is None for p in pnls):
+            return None
+        return round(sum(pnls), 2)
+
+    @property
+    def day_missing(self) -> int:
+        return sum(1 for v in self.valued if v.day_pnl is None)
 
     @property
     def total_pnl(self) -> Optional[float]:
