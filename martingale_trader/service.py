@@ -2,7 +2,10 @@
 
 One run per weekday, after the close. Each run:
 
-1. Fetches recent daily closes for the index.
+1. Fetches recent daily closes for the index from the Schwab Trader API
+   (Schwab only — no Yahoo fallback; a run without usable Schwab
+   credentials fails and triggers the workflow's failure alert, because
+   this service writes permanent state from the prices it fetches).
 2. Settles the open round at the latest close (if the close is newer
    than the round's entry) and advances the stake ladder.
 3. Opens the next round at that close, unless the account is busted.
@@ -22,6 +25,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+from earnings_notifier.config import ConfigError
 from earnings_notifier.notifier import EmailNotifier
 
 from .config import MartingaleConfig
@@ -38,6 +42,47 @@ from .engine import (
 logger = logging.getLogger(__name__)
 
 SYMBOL_LABEL = "SPX"
+
+
+class SchwabHistory:
+    """Daily bars from the Schwab ``/pricehistory`` endpoint, nothing else."""
+
+    def __init__(self, session) -> None:
+        self._session = session
+
+    def price_history(self, ticker: str, days: int = 30):
+        from earnings_analyzer.schwab import bars_from_candles, schwab_symbol
+
+        payload = self._session.get(
+            "/pricehistory",
+            {
+                "symbol": schwab_symbol(ticker),
+                "periodType": "month",
+                "period": 1,
+                "frequencyType": "daily",
+                "frequency": 1,
+            },
+        )
+        return bars_from_candles(payload)
+
+
+def _schwab_provider(config: MartingaleConfig) -> SchwabHistory:
+    """Schwab or nothing: missing/lapsed credentials abort the run."""
+    if not (config.schwab_app_key and config.schwab_app_secret):
+        raise ConfigError(
+            "SCHWAB_APP_KEY and SCHWAB_APP_SECRET are required — the "
+            "martingale trader prices from Schwab only (no Yahoo fallback)."
+        )
+    from earnings_analyzer.schwab import SchwabSession
+
+    return SchwabHistory(
+        SchwabSession(
+            app_key=config.schwab_app_key,
+            app_secret=config.schwab_app_secret,
+            token_json=config.schwab_token,
+            token_file=config.schwab_token_file,
+        )
+    )
 
 
 @dataclass
@@ -69,9 +114,7 @@ def run_martingale(
         return MartingaleRunResult(0, 0, 0, skipped=True)
 
     if provider is None:
-        from earnings_analyzer.provider import YFinanceMarketData
-
-        provider = YFinanceMarketData(today=today)
+        provider = _schwab_provider(config)
     bars = [
         b for b in provider.price_history(config.martingale_symbol, days=30)
         if b.day <= today

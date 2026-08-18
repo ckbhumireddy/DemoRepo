@@ -307,9 +307,14 @@ close to close ($25,000 start):
 One run per weekday at ~16:45 ET settles yesterday's round at the day's
 close, opens the next one, and emails a daily report (result, balance,
 ladder step, loss streaks, max drawdown, recent rounds). Closes come
-from Yahoo (`^GSPC`); a duplicate run or a market holiday is a no-op,
-so the external trigger and the cron fallback can both fire. State
-(`state/martingale.json`) rides the shared workflow cache.
+from the **Schwab Trader API only** (`$SPX`) — no Yahoo fallback,
+because this service writes permanent state from the prices it fetches:
+a run without a live Schwab token fails and sends the failure alert
+instead of trading on degraded data (keep the weekly
+`scripts/schwab_auth.py --set-secret` refresh current). A duplicate run
+or a market holiday is a no-op, so the external trigger and the cron
+fallback can both fire. State (`state/martingale.json`) rides the
+shared workflow cache.
 
 Trigger: add a cron-job.org job "martingale" (weekdays 16:45,
 America/New_York, same PAT/headers) POSTing `{"ref":"master","inputs":{}}`
@@ -322,6 +327,6 @@ workflow's UTC cron is fallback only. Tuning variables:
 python -m martingale_trader --dry-run   # preview, nothing traded or sent
 ```
 
-> Run it only after the close — during market hours Yahoo's latest bar
-> is the in-progress day. Educational only; martingale does not create
-> an edge, it only reshapes when the losses arrive.
+> Run it only after the close — during market hours the latest daily
+> bar is the in-progress day. Educational only; martingale does not
+> create an edge, it only reshapes when the losses arrive.

@@ -59,6 +59,11 @@ jobs:
           MARTINGALE_START_BALANCE: ${{ vars.MARTINGALE_START_BALANCE }}
           MARTINGALE_BASE_NOTIONAL: ${{ vars.MARTINGALE_BASE_NOTIONAL }}
           MARTINGALE_MAX_DOUBLINGS: ${{ vars.MARTINGALE_MAX_DOUBLINGS }}
+          # Schwab market data — REQUIRED: this trader prices from Schwab
+          # only (no Yahoo fallback); the run fails without a live token.
+          SCHWAB_APP_KEY: ${{ secrets.SCHWAB_APP_KEY }}
+          SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
+          SCHWAB_TOKEN: ${{ secrets.SCHWAB_TOKEN }}
         run: |
           python -m martingale_trader \
             ${{ inputs.dry_run == true && '--dry-run' || '' }}
