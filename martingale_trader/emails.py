@@ -21,7 +21,7 @@ DISCLAIMER = (
     "Martingale sizing doubles the stake after every losing day, so one "
     "long losing streak can wipe out the account — this paper trader "
     "exists to demonstrate that failure mode. Paper money only. Closes "
-    "are from Yahoo Finance. Not investment advice."
+    "are from the Schwab Trader API. Not investment advice."
 )
 
 _TH = (

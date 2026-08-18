@@ -144,3 +144,34 @@ def test_no_bars_raises(tmp_path, monkeypatch):
     config = _config(tmp_path)
     with pytest.raises(RuntimeError):
         run_martingale(config, today=D1, provider=FakeProvider([]))
+
+
+def test_missing_schwab_credentials_abort_the_run(tmp_path, monkeypatch):
+    # Schwab only, no Yahoo fallback: without credentials the run fails
+    # before it touches any market data.
+    from earnings_notifier.config import ConfigError
+
+    _patch_notifier(monkeypatch)
+    config = _config(tmp_path)
+    with pytest.raises(ConfigError, match="SCHWAB_APP_KEY"):
+        run_martingale(config, today=D1)
+
+
+def test_schwab_history_requests_spx_daily_bars(monkeypatch):
+    from martingale_trader.service import SchwabHistory
+
+    calls = []
+
+    class FakeSession:
+        def get(self, path, params):
+            calls.append((path, params))
+            return {"candles": [
+                {"datetime": 1755475200000, "open": 6400.0, "high": 6410.0,
+                 "low": 6390.0, "close": 6405.0, "volume": 1.0},
+            ]}
+
+    bars = SchwabHistory(FakeSession()).price_history("$SPX")
+    assert calls[0][0] == "/pricehistory"
+    assert calls[0][1]["symbol"] == "$SPX"
+    assert calls[0][1]["frequencyType"] == "daily"
+    assert len(bars) == 1 and bars[0].close == 6405.0

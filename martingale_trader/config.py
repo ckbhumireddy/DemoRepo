@@ -22,8 +22,15 @@ class MartingaleConfig(Config):
     # base * 2**max_doublings (the "table limit").
     martingale_base_notional: float = 5000.0
     martingale_max_doublings: int = 6
-    # Yahoo symbol for the S&P 500 index.
-    martingale_symbol: str = "^GSPC"
+    # Schwab symbol for the S&P 500 index.
+    martingale_symbol: str = "$SPX"
+
+    # Charles Schwab Trader API — REQUIRED: this trader prices from Schwab
+    # only (no Yahoo fallback); a run without usable credentials fails.
+    schwab_app_key: str = ""
+    schwab_app_secret: str = ""
+    schwab_token: str = ""
+    schwab_token_file: str = ""
 
     @classmethod
     def from_env(cls) -> "MartingaleConfig":
@@ -41,8 +48,12 @@ class MartingaleConfig(Config):
             ),
             martingale_max_doublings=_get_int("MARTINGALE_MAX_DOUBLINGS", 6),
             martingale_symbol=os.environ.get(
-                "MARTINGALE_SYMBOL", "^GSPC"
+                "MARTINGALE_SYMBOL", "$SPX"
             ).strip(),
+            schwab_app_key=os.environ.get("SCHWAB_APP_KEY", "").strip(),
+            schwab_app_secret=os.environ.get("SCHWAB_APP_SECRET", "").strip(),
+            schwab_token=os.environ.get("SCHWAB_TOKEN", "").strip(),
+            schwab_token_file=os.environ.get("SCHWAB_TOKEN_FILE", "").strip(),
         )
 
     def validate(self) -> None:
