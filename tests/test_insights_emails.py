@@ -90,6 +90,9 @@ def test_midday_email_contents():
     ]
     subject, text, html = render_midday_email(triggers, views, portfolio, TODAY)
     assert subject == "[Portfolio] Midday alert — TGT +6.2% · portfolio +2.4%"
-    assert "TGT +6.2%" in text
-    assert "% of portfolio" in text          # position context attached
+    flat = " ".join(text.split())
+    assert "DAY P&L VALUE WT" in flat            # column headers
+    assert "TGT +4.00% +600 $15,600 100.0%" in flat
+    assert "PORTFOLIO TRIGGER:" in text
+    assert "<table" in html and "Weight" in html
     assert DISCLAIMER in text and DISCLAIMER in html
