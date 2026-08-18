@@ -1,0 +1,90 @@
+name: IV rank scanner
+
+# Daily scan emailed at the market open. PRIMARY trigger: the external
+# scheduler (cron-job.org, timezone America/New_York) calls the
+# workflow_dispatch API at exactly 09:00 ET — the full S&P 500 sweep takes
+# ~9 minutes, so the email lands ~09:10 ET with prior-close IVs.
+#
+# The cron below is only a FALLBACK (GitHub starts scheduled runs 55-75
+# minutes late on shared runners). Double runs are harmless: a state
+# marker keeps the email to one send per day. NOTE: cron is UTC — when
+# DST ends (November), shift it +1h.
+
+on:
+  schedule:
+    - cron: "30 12 * * 1-5"   # fallback; lands ~13:25-13:45 UTC (~9:25-9:45 ET)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only (do not email or write state)"
+        type: boolean
+        default: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Read-only view of the digest's window hand-off (earnings labels).
+      - name: Restore window hand-off
+        uses: actions/cache/restore@v4
+        with:
+          path: out
+          key: earnings-window-
+          restore-keys: |
+            earnings-window-
+
+      # Rolling state cache shared with the other workflows.
+      - name: Persist scanner state
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: earnings-state-${{ github.run_id }}
+          restore-keys: |
+            earnings-state-
+
+      - name: Run scan
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+          WINDOW_FILE: out/window.json
+          PORTFOLIO_JSON: ${{ secrets.PORTFOLIO_JSON }}
+          IVSCAN_TOP_N: ${{ vars.IVSCAN_TOP_N }}
+          # Schwab market data — required for the full S&P 500 sweep;
+          # without it the scan degrades to portfolio + weekly reporters.
+          SCHWAB_APP_KEY: ${{ secrets.SCHWAB_APP_KEY }}
+          SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
+          SCHWAB_TOKEN: ${{ secrets.SCHWAB_TOKEN }}
+        run: |
+          python -m iv_scanner \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python scripts/send_alert.py
