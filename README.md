@@ -289,3 +289,39 @@ cron is fallback only.
 ```powershell
 python -m iv_scanner --dry-run --universe portfolio   # fast local preview
 ```
+
+## Martingale Paper Trader (martingale_trader)
+
+A deliberate demonstration of why martingale position sizing fails,
+played out on SPX with paper money. One long round per trading day,
+close to close ($25,000 start):
+
+- The stake is a notional exposure: **$5,000 × 2^step**.
+- A losing day doubles the stake; a winning day resets it to $5,000; a
+  flat day holds it. The ladder caps at 6 doublings ($320,000 — the
+  "table limit"), and the notional may exceed the balance (paper
+  leverage), because that is exactly the failure mode martingale hides.
+- The account **busts** when the balance reaches $0; a busted account
+  never trades again.
+
+One run per weekday at ~16:45 ET settles yesterday's round at the day's
+close, opens the next one, and emails a daily report (result, balance,
+ladder step, loss streaks, max drawdown, recent rounds). Closes come
+from Yahoo (`^GSPC`); a duplicate run or a market holiday is a no-op,
+so the external trigger and the cron fallback can both fire. State
+(`state/martingale.json`) rides the shared workflow cache.
+
+Trigger: add a cron-job.org job "martingale" (weekdays 16:45,
+America/New_York, same PAT/headers) POSTing `{"ref":"master","inputs":{}}`
+to `.../actions/workflows/martingale-trader.yml/dispatches`; the
+workflow's UTC cron is fallback only. Tuning variables:
+`MARTINGALE_START_BALANCE`, `MARTINGALE_BASE_NOTIONAL`,
+`MARTINGALE_MAX_DOUBLINGS`.
+
+```powershell
+python -m martingale_trader --dry-run   # preview, nothing traded or sent
+```
+
+> Run it only after the close — during market hours Yahoo's latest bar
+> is the in-progress day. Educational only; martingale does not create
+> an edge, it only reshapes when the losses arrive.
