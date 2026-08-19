@@ -6,6 +6,15 @@
     "factor": 3.0,
     "max_notional": 160000.0
   },
+  "tripledip-harvest": {
+    "description": "Income variant of tripledip: same sizing, plus withdraw $25,000 whenever the balance reaches $75,000. 1990-2026 benchmark: 7.99% worst CAGR (vs 8.84% without withdrawals), $350,000 banked across 14 withdrawals, at-risk balance capped near $75k, no busts. Research-only: the live trader has no withdrawal support and refuses this preset.",
+    "base_pct": 0.30,
+    "base_notional": 0.0,
+    "factor": 3.0,
+    "max_notional": 160000.0,
+    "withdraw_at": 75000.0,
+    "withdraw_amount": 25000.0
+  },
   "classic": {
     "description": "The original fixed-dollar demonstration ladder: $5,000 x2 per losing day, $160k cap. Kept as the martingale failure-mode demo.",
     "base_pct": 0.0,

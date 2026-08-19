@@ -13,6 +13,13 @@ from earnings_trader.config import _get_float
 CHAMPIONS_FILE = os.path.join(os.path.dirname(__file__), "champions.json")
 DEFAULT_CHAMPION = "tripledip"
 
+# Champion fields the live trader can execute. A preset with any other
+# field (for example the withdrawal rules of research-only variants) is
+# refused at startup rather than run half-faithfully.
+LIVE_CHAMPION_FIELDS = {
+    "description", "base_pct", "base_notional", "factor", "max_notional",
+}
+
 
 def load_champion(name: str) -> dict:
     """A named sizing preset from champions.json."""
@@ -24,6 +31,18 @@ def load_champion(name: str) -> dict:
             + ", ".join(sorted(champions))
         )
     return champions[name]
+
+
+def load_live_champion(name: str) -> dict:
+    """A preset the live trader may run (rejects research-only fields)."""
+    champion = load_champion(name)
+    extra = sorted(set(champion) - LIVE_CHAMPION_FIELDS)
+    if extra:
+        raise ConfigError(
+            f"Champion {name!r} uses features the live trader does not "
+            f"support ({', '.join(extra)}); it is research-only"
+        )
+    return champion
 
 
 @dataclass
@@ -61,7 +80,7 @@ class MartingaleConfig(Config):
         champion_name = os.environ.get(
             "MARTINGALE_CHAMPION", DEFAULT_CHAMPION
         ).strip() or DEFAULT_CHAMPION
-        champion = load_champion(champion_name)
+        champion = load_live_champion(champion_name)
         return cls(
             **base,
             martingale_state_file=os.environ.get(

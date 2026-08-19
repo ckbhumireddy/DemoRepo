@@ -50,6 +50,18 @@ def test_simulate_amplify_scales_moves():
     assert stressed["final"] < plain["final"]
 
 
+def test_simulate_withdrawals_bank_cash():
+    # Steady +1% days: balance crosses the trigger and banks cash.
+    rows = _rows([100.0 * 1.01 ** i for i in range(400)])
+    cfg = {"base": 1.0, "pct": True, "factor": 2.0, "cap": 1e12,
+           "withdraw_at": 30000.0, "withdraw_amount": 10000.0}
+    r = simulate(rows, cfg)
+    assert r["n_withdrawals"] > 0
+    assert r["withdrawn"] == 10000.0 * r["n_withdrawals"]
+    assert round(r["final"], 6) == round(r["balance"] + r["withdrawn"], 6)
+    assert r["balance"] < 30000.0
+
+
 # ---------------------------------------------------------------- harness
 def _years_rows():
     # Three years of gentle drift upward, daily rows.
@@ -115,6 +127,10 @@ def test_promote_rejects_research_only_knobs(tmp_path):
         promote("x", {**CHAMPION, "enter_after": 2}, m, s,
                 champions_file=str(champions))
     with pytest.raises(ValueError):
+        promote("x", {**CHAMPION, "withdraw_at": 75000.0,
+                      "withdraw_amount": 25000.0}, m, s,
+                champions_file=str(champions))
+    with pytest.raises(ValueError):
         promote("x", {**CHAMPION, "reset": "half"}, m, s,
                 champions_file=str(champions))
     with pytest.raises(ValueError):
@@ -147,4 +163,19 @@ def test_trader_reads_champion_presets(monkeypatch):
 
     monkeypatch.setenv("MARTINGALE_CHAMPION", "nope")
     with pytest.raises(ConfigError):
+        MartingaleConfig.from_env()
+
+
+def test_research_only_champion_is_refused_live(monkeypatch):
+    # tripledip-harvest exists in the registry and works in research,
+    # but the live trader has no withdrawal support and must refuse it.
+    from earnings_notifier.config import ConfigError
+    from martingale_trader.config import MartingaleConfig, load_champion
+
+    preset = load_champion("tripledip-harvest")
+    assert preset["withdraw_at"] == 75000.0
+    assert champion_cfg(preset)["withdraw_amount"] == 25000.0
+
+    monkeypatch.setenv("MARTINGALE_CHAMPION", "tripledip-harvest")
+    with pytest.raises(ConfigError, match="research-only"):
         MartingaleConfig.from_env()

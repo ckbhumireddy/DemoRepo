@@ -328,7 +328,9 @@ workflow's UTC cron is fallback only.
 Sizing comes from a named preset in
 `martingale_trader/champions.json` (variable
 `MARTINGALE_CHAMPION`, default **tripledip**; `classic` is the
-original fixed-dollar demo ladder). Individual overrides:
+original fixed-dollar demo ladder; `tripledip-harvest` is a
+research-only income variant — withdraw $25k at $75k — that the
+live trader refuses because it has no withdrawal support). Individual overrides:
 `MARTINGALE_START_BALANCE`, `MARTINGALE_BASE_PCT`,
 `MARTINGALE_BASE_NOTIONAL`, `MARTINGALE_FACTOR`,
 `MARTINGALE_MAX_NOTIONAL`.

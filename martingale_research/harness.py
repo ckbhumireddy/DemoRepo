@@ -26,8 +26,12 @@ def champion_cfg(preset: dict) -> Dict:
         base, pct = preset["base_pct"], True
     else:
         base, pct = preset["base_notional"], False
-    return {"base": base, "pct": pct, "factor": preset["factor"],
-            "cap": preset["max_notional"]}
+    cfg = {"base": base, "pct": pct, "factor": preset["factor"],
+           "cap": preset["max_notional"]}
+    if preset.get("withdraw_at"):
+        cfg["withdraw_at"] = preset["withdraw_at"]
+        cfg["withdraw_amount"] = preset["withdraw_amount"]
+    return cfg
 
 
 def score(
@@ -99,7 +103,7 @@ def experiment(
 # --------------------------------------------------------------------- #
 # Ladder knobs the live trader cannot execute; configs using them are
 # research-only and must not be promoted.
-_UNSUPPORTED_LIVE = ("enter_after", "max_lev")
+_UNSUPPORTED_LIVE = ("enter_after", "max_lev", "withdraw_at")
 
 
 def promote(

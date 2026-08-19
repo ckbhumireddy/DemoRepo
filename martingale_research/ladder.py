@@ -8,6 +8,9 @@ Config keys (all optional except base and factor):
   reset        after a winning day: "full" (step 0), "half", or "hold"
   enter_after  trade only when the index down-streak >= N days
   max_lev      optional extra cap as a multiple of the balance
+  withdraw_at / withdraw_amount
+               bank withdraw_amount whenever the balance reaches
+               withdraw_at; metrics are on total equity (balance + cash)
 """
 
 from __future__ import annotations
@@ -37,8 +40,10 @@ def simulate(
             scaled.append(scaled[-1] * (1.0 + amplify * r))
         px = scaled
     cap = cfg.get("cap", 160000.0)
-    balance, step, down = start_balance, 0, 0
+    take_at = cfg.get("withdraw_at")
+    balance, step, down, withdrawn = start_balance, 0, 0, 0.0
     peak, max_dd = start_balance, 0.0
+    n_withdrawals = 0
     for i in range(1, len(px)):
         ret = px[i] / px[i - 1] - 1.0
         if down >= cfg.get("enter_after", 0):
@@ -55,12 +60,21 @@ def simulate(
                 step = {"full": 0, "half": max(0, step - 1),
                         "hold": step}[cfg.get("reset", "full")]
         down = down + 1 if ret < 0 else 0
-        peak = max(peak, balance)
-        max_dd = max(max_dd, (peak - balance) / peak)
+        if take_at and balance >= take_at:
+            balance -= cfg["withdraw_amount"]
+            withdrawn += cfg["withdraw_amount"]
+            n_withdrawals += 1
+        equity = balance + withdrawn
+        peak = max(peak, equity)
+        max_dd = max(max_dd, (peak - equity) / peak)
     years = (rows[-1][0] - rows[0][0]).days / 365.25
+    equity = balance + withdrawn
     return {
-        "final": balance,
-        "cagr": (balance / start_balance) ** (1 / years) - 1,
+        "final": equity,
+        "balance": balance,
+        "withdrawn": withdrawn,
+        "n_withdrawals": n_withdrawals,
+        "cagr": (equity / start_balance) ** (1 / years) - 1,
         "max_dd": max_dd,
         "years": years,
     }
