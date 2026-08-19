@@ -20,6 +20,13 @@ def test_defaults_from_empty_env():
     assert cfg.insights_event_days == 7
     assert cfg.portfolio_file == "portfolio.json"
     assert cfg.portfolio_json == ""
+    assert cfg.insights_track_options is False
+
+
+def test_options_tracking_env_opt_in():
+    with mock.patch.dict(os.environ, {"INSIGHTS_TRACK_OPTIONS": "true"},
+                         clear=True):
+        assert InsightsConfig.from_env().insights_track_options is True
 
 
 def test_env_overrides():

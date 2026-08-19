@@ -130,10 +130,12 @@ def run_insights(
     )
     views, portfolio = build_views(snapshot, quotes)
 
-    # Options book: valued from live chains in both modes; folded into the
-    # portfolio totals so the headline matches the broker's.
+    # Options book: valued and folded into totals only when tracking is
+    # enabled — marks for far-dated contracts proved unreliable, so the
+    # default is to exclude them and say so.
     option_summary = None
-    if snapshot.options:
+    options_note = None
+    if snapshot.options and config.insights_track_options:
         if provider is None:
             from earnings_analyzer.schwab import build_provider
 
@@ -142,6 +144,11 @@ def run_insights(
             build_option_views(snapshot.options, provider, today)
         )
         apply_options(portfolio, option_summary)
+    elif snapshot.options:
+        options_note = (
+            f"{len(snapshot.options)} option position(s) are excluded from "
+            "all figures (options tracking is off)."
+        )
 
     if mode == "midday":
         triggers = check_alert_triggers(
@@ -258,7 +265,7 @@ def run_insights(
     )
     subject, text, html_body = render_eod_email(
         views, portfolio, insights, today, iv_context=iv_context,
-        options_summary=option_summary,
+        options_summary=option_summary, other_note=options_note,
     )
     notifier.send(subject, text, html_body)
     if not config.dry_run and config.insights_state_file:

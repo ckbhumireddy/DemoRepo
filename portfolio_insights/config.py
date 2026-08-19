@@ -6,7 +6,7 @@ import dataclasses
 import os
 from dataclasses import dataclass
 
-from earnings_notifier.config import Config, ConfigError, _get_int
+from earnings_notifier.config import Config, ConfigError, _get_bool, _get_int
 
 
 def _get_float(name: str, default: float) -> float:
@@ -44,6 +44,12 @@ class InsightsConfig(Config):
     portfolio_json: str = ""
     portfolio_file: str = "portfolio.json"
 
+    # Options reporting is OFF by default: marks for far-dated, thinly
+    # traded contracts proved unreliable, and wrong numbers are worse than
+    # none. The emails note the exclusion; flip INSIGHTS_TRACK_OPTIONS to
+    # re-enable.
+    insights_track_options: bool = False
+
     # Charles Schwab credentials — market data only (quotes + history),
     # with automatic Yahoo fallback when unset or lapsed.
     schwab_app_key: str = ""
@@ -76,6 +82,7 @@ class InsightsConfig(Config):
             portfolio_file=os.environ.get(
                 "PORTFOLIO_FILE", "portfolio.json"
             ).strip(),
+            insights_track_options=_get_bool("INSIGHTS_TRACK_OPTIONS", False),
             schwab_app_key=os.environ.get("SCHWAB_APP_KEY", "").strip(),
             schwab_app_secret=os.environ.get("SCHWAB_APP_SECRET", "").strip(),
             schwab_token=os.environ.get("SCHWAB_TOKEN", "").strip(),
