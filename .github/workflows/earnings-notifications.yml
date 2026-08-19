@@ -1,19 +1,20 @@
 name: S&P 500 earnings notifications
 
-# Two weekday schedules (cron is UTC; times below assume US daylight saving):
-#   12:00 UTC (07:00 CDT / 08:00 ET, pre-market) -> calendar digest email
+# Two weekday schedules (cron is UTC; times below assume US daylight
+# saving; GitHub fires scheduled runs 55-75 minutes late on shared runners):
+#   12:00 UTC -> lands ~08:00 ET pre-market -> calendar digest email
 #     + window file
-#   14:00 UTC (09:00 CDT / 10:00 ET, options open) -> deep-analysis
-#     trade-sheet email, run after the open so option quotes/spreads are
-#     live, not stale. NOTE: when DST ends (November), both runs land one
-#     hour earlier in Central time and 14:00 UTC is 09:00 ET — before the
-#     09:30 ET options open; shift the crons +1h then.
+#   15:00 UTC -> lands ~12:00-12:15 ET, MIDDAY -> deep-analysis trade-sheet
+#     email. Midday deliberately: option bid/ask spreads are defensively
+#     wide for the first hour after the open and mislabel liquid chains as
+#     NO TRADE; by noon they are settled. NOTE: when DST ends (November),
+#     both runs land one hour earlier in Eastern time; shift the crons +1h.
 # Manual dispatch runs both back to back (optionally as a dry run).
 
 on:
   schedule:
     - cron: "0 12 * * 1-5"    # digest
-    - cron: "0 14 * * 1-5"    # trade sheet
+    - cron: "0 15 * * 1-5"    # trade sheet (midday)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -30,7 +31,7 @@ on:
 
 jobs:
   notify:
-    # The digest job: every trigger except the 14:00 trade-sheet cron.
+    # The digest job: every trigger except the midday trade-sheet cron.
     if: github.event_name != 'schedule' || github.event.schedule == '0 12 * * 1-5'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -139,8 +140,9 @@ jobs:
         run: python scripts/send_alert.py
 
   trade_sheet:
-    # The dedicated analyzer run at 14:00 UTC (10:00 ET DST), after options open.
-    if: github.event_name == 'schedule' && github.event.schedule == '0 14 * * 1-5'
+    # The dedicated analyzer run: 15:00 UTC cron lands ~12:00-12:15 ET —
+    # midday, when option bid/ask spreads have settled.
+    if: github.event_name == 'schedule' && github.event.schedule == '0 15 * * 1-5'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
