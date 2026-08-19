@@ -6,11 +6,14 @@ README warning):
 - One long SPX round per trading day, close to close. A round opened at
   today's close settles at the next available close; if a run is missed
   the round simply spans more days.
-- The stake is a notional dollar exposure: ``base_notional * 2**step``.
-- A losing round moves the ladder one step up (double the stake), a
-  winning round resets it to step 0, and a flat round leaves it alone.
-- The ladder is capped at ``max_doublings`` (the "table limit"): once
-  there, the stake stays at the cap until a win resets it.
+- The stake is a notional dollar exposure:
+  ``min(base * factor**step, cap)`` — base is a fraction of the balance
+  (or fixed dollars), so exposure compounds with the account while the
+  dollar cap bounds any single crash week.
+- A losing round moves the ladder one step up (multiply the stake by
+  ``factor``), a winning round resets it to step 0, and a flat round
+  leaves it alone. Past the point where the cap binds, the stake stays
+  at the cap until a win resets it.
 - The notional may exceed the balance (paper leverage) — that is exactly
   the failure mode martingale hides. The account busts when the balance
   reaches 0 or below; a busted account never trades again.
@@ -98,9 +101,14 @@ def save_state(path: str, state: dict) -> None:
         json.dump(state, fh, indent=2)
 
 
-def notional_for_step(step: int, base_notional: float, max_doublings: int) -> float:
+MAX_STEP = 30   # ladder bookkeeping bound; the dollar cap binds far earlier
+
+
+def notional_for_step(
+    step: int, base: float, factor: float, cap: float
+) -> float:
     """The stake for a ladder position, capped at the table limit."""
-    return round(base_notional * 2 ** min(step, max_doublings), 2)
+    return round(min(base * factor ** min(step, MAX_STEP), cap), 2)
 
 
 def open_round(state: dict, day, price: float, notional: float) -> dict:
@@ -119,13 +127,13 @@ def open_round(state: dict, day, price: float, notional: float) -> dict:
     return rnd
 
 
-def settle_open_round(state: dict, day, price: float, *, max_doublings: int) -> dict:
+def settle_open_round(state: dict, day, price: float) -> dict:
     """Settle the open round at this close and advance the ladder."""
     rnd = state["open_round"]
     pnl = round(rnd["notional"] * (price / rnd["entry_price"] - 1.0), 2)
     state["balance"] = round(state["balance"] + pnl, 2)
     if pnl < 0:
-        state["step"] = min(state["step"] + 1, max_doublings)
+        state["step"] = min(state["step"] + 1, MAX_STEP)
     elif pnl > 0:
         state["step"] = 0
     state["busted"] = state["balance"] <= 0
@@ -147,7 +155,7 @@ def settle_open_round(state: dict, day, price: float, *, max_doublings: int) -> 
 
 
 def summarize(
-    state: dict, base_notional: float, max_doublings: int, *, recent_n: int = 10
+    state: dict, base: float, factor: float, cap: float, *, recent_n: int = 10
 ) -> MartingaleSummary:
     rounds = state.get("rounds", [])
     wins = sum(1 for r in rounds if r["pnl"] > 0)
@@ -179,7 +187,7 @@ def summarize(
         busted=state.get("busted", False),
         step=state.get("step", 0),
         next_notional=notional_for_step(
-            state.get("step", 0), base_notional, max_doublings
+            state.get("step", 0), base, factor, cap
         ),
         open_round=state.get("open_round"),
         rounds_total=len(rounds),

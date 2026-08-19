@@ -13,24 +13,32 @@ from martingale_trader.engine import (
 D1 = dt.date(2026, 8, 17)
 D2 = dt.date(2026, 8, 18)
 
+# A plain doubling ladder with a high cap reproduces the classic behavior.
+BASE, FACTOR, CAP = 5000.0, 2.0, 320000.0
+
 
 def _fresh():
     return load_state("", 25000.0)
 
 
-def _run_round(state, entry, exit_, *, base=5000.0, max_doublings=6):
-    notional = notional_for_step(state["step"], base, max_doublings)
+def _run_round(state, entry, exit_, *, base=BASE, factor=FACTOR, cap=CAP):
+    notional = notional_for_step(state["step"], base, factor, cap)
     open_round(state, D1, entry, notional)
-    return settle_open_round(state, D2, exit_, max_doublings=max_doublings)
+    return settle_open_round(state, D2, exit_)
 
 
 # ---------------------------------------------------------------- ladder
-def test_notional_ladder_doubles_and_caps():
-    assert notional_for_step(0, 5000.0, 6) == 5000.0
-    assert notional_for_step(3, 5000.0, 6) == 40000.0
-    assert notional_for_step(6, 5000.0, 6) == 320000.0
+def test_notional_ladder_multiplies_and_caps():
+    assert notional_for_step(0, 5000.0, 2.0, 320000.0) == 5000.0
+    assert notional_for_step(3, 5000.0, 2.0, 320000.0) == 40000.0
+    assert notional_for_step(6, 5000.0, 2.0, 320000.0) == 320000.0
     # Past the table limit the stake stays at the cap.
-    assert notional_for_step(9, 5000.0, 6) == 320000.0
+    assert notional_for_step(9, 5000.0, 2.0, 320000.0) == 320000.0
+    # The champion shape: 30% of a $25k balance, factor 3, $160k cap.
+    assert notional_for_step(0, 7500.0, 3.0, 160000.0) == 7500.0
+    assert notional_for_step(1, 7500.0, 3.0, 160000.0) == 22500.0
+    assert notional_for_step(2, 7500.0, 3.0, 160000.0) == 67500.0
+    assert notional_for_step(3, 7500.0, 3.0, 160000.0) == 160000.0
 
 
 def test_loss_steps_up_win_resets_push_holds():
@@ -50,11 +58,11 @@ def test_loss_steps_up_win_resets_push_holds():
     assert state["balance"] == 25150.0
 
 
-def test_step_never_exceeds_max_doublings():
+def test_notional_never_exceeds_the_cap():
     state = _fresh()
     for _ in range(10):
-        _run_round(state, 100.0, 99.0, max_doublings=3)
-    assert state["step"] == 3
+        _run_round(state, 100.0, 99.0, cap=25000.0)
+    assert notional_for_step(state["step"], BASE, FACTOR, 25000.0) == 25000.0
 
 
 def test_bust_at_or_below_zero():
@@ -90,7 +98,7 @@ def test_summarize_streaks_and_drawdown():
     _run_round(state, 100.0, 99.0)      # -100  -> 24850
     _run_round(state, 100.0, 101.0)     # +200  -> 25050
     _run_round(state, 100.0, 99.0)      # -50   -> 25000
-    s = summarize(state, 5000.0, 6)
+    s = summarize(state, BASE, FACTOR, CAP)
     assert (s.rounds_total, s.wins, s.losses, s.pushes) == (4, 1, 3, 0)
     assert s.current_loss_streak == 1
     assert s.max_loss_streak == 2
@@ -105,6 +113,6 @@ def test_summarize_win_rate_ignores_pushes():
     state = _fresh()
     _run_round(state, 100.0, 101.0)
     _run_round(state, 100.0, 100.0)
-    s = summarize(state, 5000.0, 6)
+    s = summarize(state, BASE, FACTOR, CAP)
     assert s.win_rate == 1.0
-    assert summarize(_fresh(), 5000.0, 6).win_rate is None
+    assert summarize(_fresh(), BASE, FACTOR, CAP).win_rate is None

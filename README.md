@@ -296,11 +296,15 @@ A deliberate demonstration of why martingale position sizing fails,
 played out on SPX with paper money. One long round per trading day,
 close to close ($25,000 start):
 
-- The stake is a notional exposure: **$5,000 × 2^step**.
-- A losing day doubles the stake; a winning day resets it to $5,000; a
-  flat day holds it. The ladder caps at 5 doublings ($160,000 — the
-  "table limit"), and the notional may exceed the balance (paper
+- The stake is a notional exposure: **min(30% of balance × 3^step,
+  $160,000)** — the champion of a 1990-2026 parameter search (worst
+  CAGR across five start years, bust disqualifies, plus a 1.25x
+  volatility stress gate). Percent sizing compounds with the account;
+  the dollar cap bounds any single crash week.
+- A losing day triples the stake; a winning day resets it to the 30%
+  base; a flat day holds it. The notional may exceed the balance (paper
   leverage), because that is exactly the failure mode martingale hides.
+  Set `MARTINGALE_BASE_PCT=0` for the original fixed-dollar ladder.
 - The account **busts** when the balance reaches $0; a busted account
   never trades again.
 
@@ -319,9 +323,15 @@ shared workflow cache.
 Trigger: add a cron-job.org job "martingale" (weekdays 16:45,
 America/New_York, same PAT/headers) POSTing `{"ref":"master","inputs":{}}`
 to `.../actions/workflows/martingale-trader.yml/dispatches`; the
-workflow's UTC cron is fallback only. Tuning variables:
-`MARTINGALE_START_BALANCE`, `MARTINGALE_BASE_NOTIONAL`,
-`MARTINGALE_MAX_DOUBLINGS`.
+workflow's UTC cron is fallback only.
+
+Sizing comes from a named preset in
+`martingale_trader/champions.json` (variable
+`MARTINGALE_CHAMPION`, default **tripledip**; `classic` is the
+original fixed-dollar demo ladder). Individual overrides:
+`MARTINGALE_START_BALANCE`, `MARTINGALE_BASE_PCT`,
+`MARTINGALE_BASE_NOTIONAL`, `MARTINGALE_FACTOR`,
+`MARTINGALE_MAX_NOTIONAL`.
 
 ```powershell
 python -m martingale_trader --dry-run   # preview, nothing traded or sent
@@ -330,3 +340,31 @@ python -m martingale_trader --dry-run   # preview, nothing traded or sent
 > Run it only after the close — during market hours the latest daily
 > bar is the in-progress day. Educational only; martingale does not
 > create an edge, it only reshapes when the losses arrive.
+
+## Ladder Research (martingale_research)
+
+The offline autoresearch harness that produced the **tripledip**
+champion. It replays ladder configs continuously over SPX closes since
+1990 (Yahoo, cached to `state/spx_closes.csv`) and scores each config
+by its **worst CAGR across five start years** (1990/2000/2007/2014/2020)
+— any bust disqualifies. Every run appends to
+`state/research_results.tsv`.
+
+```powershell
+# score a named champion, with the 1.25x volatility stress gate
+python -m martingale_research --champion tripledip --stress
+
+# run a grid experiment
+python -m martingale_research --tag exp1 --grid '[{"base": 0.3, "pct": true, "factor": 3.0}]'
+
+# promote the best stress-surviving config into champions.json
+python -m martingale_research --tag exp1 --grid '[...]' --promote mychampion
+```
+
+`--promote` writes the winner into `martingale_trader/champions.json`
+in the live trader's schema — commit the file and set
+`MARTINGALE_CHAMPION=<name>` to deploy it. Configs using
+research-only knobs (`enter_after`, `max_lev`, non-full `reset`) are
+refused, because the live trader cannot execute them. Promotion
+requires surviving the stress gate; raw-history winners that die under
+1.25x moves are not deployable artifacts.
