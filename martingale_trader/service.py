@@ -90,13 +90,45 @@ def daily_bar_from_intraday(payload):
     return None
 
 
-class SchwabHistory:
-    """Daily bars from the Schwab ``/pricehistory`` endpoint, nothing else.
+NY_CLOSE = dt.time(16, 0)
 
-    Schwab posts the official daily candle hours after the close, so a
-    16:45 ET run would otherwise only see yesterday. When the intraday
-    feed shows a completed session newer than the last daily candle,
-    its close is appended as the day's bar.
+
+def bar_from_quote(quote: dict):
+    """Today's daily bar from a ``/quotes`` payload — only when the
+    quote is stamped at/after the 16:00 New York close, so a mid-session
+    quote can never become a "close"."""
+    from zoneinfo import ZoneInfo
+
+    from earnings_analyzer.models import PriceBar
+
+    stamp = quote.get("quoteTimeInLong") or quote.get("tradeTime")
+    last = quote.get("lastPrice")
+    if not stamp or not last or last <= 0:
+        return None
+    stamped = dt.datetime.fromtimestamp(
+        stamp / 1000, tz=dt.timezone.utc
+    ).astimezone(ZoneInfo("America/New_York"))
+    if stamped.time() < NY_CLOSE:
+        return None
+    return PriceBar(
+        day=stamped.date(),
+        open=quote.get("openPrice") or last,
+        high=quote.get("highPrice") or last,
+        low=quote.get("lowPrice") or last,
+        close=last,
+        volume=quote.get("totalVolume") or 0.0,
+    )
+
+
+class SchwabHistory:
+    """Daily bars from the Schwab ``/pricehistory`` endpoint, topped up
+    with the day's close when Schwab's history lags.
+
+    Observed: for ``$SPX`` BOTH the daily and the minute pricehistory
+    feeds can lag the session by many hours, while ``/quotes`` carries
+    the final index value stamped minutes after the 16:00 ET close. So:
+    daily candles first, a completed intraday session next, and the
+    after-close quote as the authoritative same-day close.
     """
 
     def __init__(self, session) -> None:
@@ -161,20 +193,6 @@ class SchwabHistory:
             synth.day if synth else "none",
             bars[-1].day if bars else "empty",
         )
-        try:
-            quote = (self._session.get("/quotes", {"symbols": symbol})
-                     .get(symbol, {}).get("quote", {}))
-            stamp = quote.get("quoteTimeInLong") or quote.get("tradeTime")
-            logger.info(
-                "Quote check: last %.2f, prev close %.2f, quote time %s",
-                quote.get("lastPrice") or 0.0,
-                quote.get("closePrice") or 0.0,
-                dt.datetime.fromtimestamp(
-                    stamp / 1000, tz=dt.timezone.utc
-                ).isoformat(timespec="minutes") if stamp else "unknown",
-            )
-        except Exception as exc:  # noqa: BLE001 - diagnostic only
-            logger.info("Quote check failed (%s)", exc)
         if synth and (not bars or synth.day > bars[-1].day):
             logger.info(
                 "Martingale: daily candle for %s not posted yet; using the "
@@ -182,6 +200,22 @@ class SchwabHistory:
                 synth.day, synth.close,
             )
             bars.append(synth)
+
+        # The after-close quote outranks a lagging history feed.
+        try:
+            quote = (self._session.get("/quotes", {"symbols": symbol})
+                     .get(symbol, {}).get("quote", {}))
+            qbar = bar_from_quote(quote)
+        except Exception as exc:  # noqa: BLE001 - enhancement, not a dependency
+            logger.warning("Quote close fetch failed (%s)", exc)
+            qbar = None
+        if qbar and (not bars or qbar.day > bars[-1].day):
+            logger.info(
+                "Martingale: history feeds end at %s; using the after-close "
+                "quote %.2f as %s's close",
+                bars[-1].day if bars else "nothing", qbar.close, qbar.day,
+            )
+            bars.append(qbar)
         return bars
 
 
