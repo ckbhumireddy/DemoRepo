@@ -142,3 +142,20 @@ def test_empty_state_file_disables_dedupe(tmp_path, monkeypatch):
     assert _run(cfg, "midday", day_pct=6.0).emails_sent == 1
     assert _run(cfg, "midday", day_pct=6.0).emails_sent == 1
     assert len(RecordingNotifier.sent) == 2
+
+
+def test_options_excluded_by_default(tmp_path, monkeypatch):
+    """Options tracking off: no option alerts, EOD still sends with a note."""
+    _patch(monkeypatch)
+    from portfolio_insights.portfolio import OptionPosition
+
+    snap = _snapshot()
+    snap.options = [
+        OptionPosition("SNDK", dt.date(2027, 9, 17), "call", 1500.0, 1, 695.91)
+    ]
+    result = _run(_config(tmp_path), "midday", day_pct=1.0, snapshot=snap)
+    assert result.alerts == 0
+    assert result.emails_sent == 0
+
+    eod = _run(_config(tmp_path), "eod", snapshot=snap)
+    assert eod.emails_sent == 1
