@@ -15,6 +15,15 @@
     "withdraw_at": 75000.0,
     "withdraw_amount": 25000.0
   },
+  "doubledip-harvest": {
+    "description": "Risk-reduced harvest variant (Pareto-frontier research, 2026-08-19): 40% of balance, x2 per losing day, $160k cap, withdraw $25,000 at $75,000. 1990-2026: the same $350,000 banked in the same 14 withdrawals as tripledip-harvest, but max equity drawdown 22.5% vs 36.3% (the gentler ladder escalates half as hard into crashes); worst CAGR 7.87%, stress 8.40%, no busts. Research-only: the live trader has no withdrawal support and refuses this preset.",
+    "base_pct": 0.4,
+    "base_notional": 0.0,
+    "factor": 2.0,
+    "max_notional": 160000.0,
+    "withdraw_at": 75000.0,
+    "withdraw_amount": 25000.0
+  },
   "classic": {
     "description": "The original fixed-dollar demonstration ladder: $5,000 x2 per losing day, $160k cap. Kept as the martingale failure-mode demo.",
     "base_pct": 0.0,

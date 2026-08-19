@@ -179,3 +179,11 @@ def test_research_only_champion_is_refused_live(monkeypatch):
     monkeypatch.setenv("MARTINGALE_CHAMPION", "tripledip-harvest")
     with pytest.raises(ConfigError, match="research-only"):
         MartingaleConfig.from_env()
+
+    # The risk-reduced variant: same rule, gentler ladder, also live-refused.
+    double = load_champion("doubledip-harvest")
+    assert (double["base_pct"], double["factor"]) == (0.4, 2.0)
+    assert champion_cfg(double)["withdraw_at"] == 75000.0
+    monkeypatch.setenv("MARTINGALE_CHAMPION", "doubledip-harvest")
+    with pytest.raises(ConfigError, match="research-only"):
+        MartingaleConfig.from_env()
