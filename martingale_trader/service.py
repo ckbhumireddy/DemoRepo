@@ -161,6 +161,20 @@ class SchwabHistory:
             synth.day if synth else "none",
             bars[-1].day if bars else "empty",
         )
+        try:
+            quote = (self._session.get("/quotes", {"symbols": symbol})
+                     .get(symbol, {}).get("quote", {}))
+            stamp = quote.get("quoteTimeInLong") or quote.get("tradeTime")
+            logger.info(
+                "Quote check: last %.2f, prev close %.2f, quote time %s",
+                quote.get("lastPrice") or 0.0,
+                quote.get("closePrice") or 0.0,
+                dt.datetime.fromtimestamp(
+                    stamp / 1000, tz=dt.timezone.utc
+                ).isoformat(timespec="minutes") if stamp else "unknown",
+            )
+        except Exception as exc:  # noqa: BLE001 - diagnostic only
+            logger.info("Quote check failed (%s)", exc)
         if synth and (not bars or synth.day > bars[-1].day):
             logger.info(
                 "Martingale: daily candle for %s not posted yet; using the "
