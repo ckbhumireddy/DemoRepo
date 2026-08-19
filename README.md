@@ -339,9 +339,12 @@ live trader refuses because it has no withdrawal support). Individual overrides:
 python -m martingale_trader --dry-run   # preview, nothing traded or sent
 ```
 
-> Run it only after the close — during market hours the latest daily
-> bar is the in-progress day. Educational only; martingale does not
-> create an edge, it only reshapes when the losses arrive.
+> Schwab posts the official daily candle hours after the close, so
+> the trader also reads the day's 30-minute candles and synthesizes
+> the close once the session is complete (a mid-session run never
+> sees a partial day — it falls back to the last posted daily bar).
+> Educational only; martingale does not create an edge, it only
+> reshapes when the losses arrive.
 
 ## Ladder Research (martingale_research)
 
