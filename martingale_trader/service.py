@@ -134,6 +134,22 @@ class SchwabHistory:
                 },
             )
             synth = daily_bar_from_intraday(intraday)
+            if synth is None:
+                candles = (intraday or {}).get("candles") or []
+                logger.info(
+                    "Intraday feed: %d candle(s)%s — no complete session to "
+                    "synthesize", len(candles),
+                    (
+                        ", "
+                        + dt.datetime.fromtimestamp(
+                            candles[0]["datetime"] / 1000, tz=dt.timezone.utc
+                        ).isoformat(timespec="minutes")
+                        + " .. "
+                        + dt.datetime.fromtimestamp(
+                            candles[-1]["datetime"] / 1000, tz=dt.timezone.utc
+                        ).isoformat(timespec="minutes")
+                    ) if candles else "",
+                )
         except Exception as exc:  # noqa: BLE001 - enhancement, not a dependency
             logger.warning(
                 "Intraday close fetch failed (%s); using daily candles only",
