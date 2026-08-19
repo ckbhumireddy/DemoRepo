@@ -58,8 +58,11 @@ def build_option_views(
             continue
         key = (pos.underlying, pos.expiry)
         if key not in chains:
+            # Prefer the exact-expiry fetch (LEAPS sit far beyond the bulk
+            # chain horizon); plain option_chain otherwise.
+            fetch = getattr(provider, "option_chain_at", provider.option_chain)
             try:
-                chains[key] = provider.option_chain(pos.underlying, pos.expiry)
+                chains[key] = fetch(pos.underlying, pos.expiry)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("chain fetch failed (%s)", type(exc).__name__)
                 chains[key] = None

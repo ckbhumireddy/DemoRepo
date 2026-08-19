@@ -322,6 +322,40 @@ class SchwabMarketData:
             self._chain_cache[ticker] = chains
         return chains
 
+    def option_chain_at(
+        self, ticker: str, expiry: dt.date
+    ) -> Optional[OptionChain]:
+        """Chain for one exact expiry, however far out.
+
+        The bulk ``_chains`` call covers only CHAIN_HORIZON_DAYS (60) — the
+        event window the analyzer needs. LEAPS in a portfolio live years
+        beyond that; this fetches just that expiry's chain from Schwab
+        (accurate marks + netChange) instead of falling back to Yahoo's
+        stale quotes.
+        """
+        cached = self._chain_cache.get(f"{ticker}@{expiry.isoformat()}")
+        if cached is not None:
+            return cached.get(expiry)
+
+        def _fetch():
+            payload = self._session.get(
+                "/chains",
+                {
+                    "symbol": schwab_symbol(ticker),
+                    "contractType": "ALL",
+                    "strategy": "SINGLE",
+                    "fromDate": expiry.isoformat(),
+                    "toDate": expiry.isoformat(),
+                },
+            )
+            return chains_from_payload(payload, ticker) or None
+
+        chains = self._schwab(f"option chain {ticker}@{expiry}", _fetch)
+        if chains and expiry in chains:
+            self._chain_cache[f"{ticker}@{expiry.isoformat()}"] = chains
+            return chains[expiry]
+        return self._fallback.option_chain(ticker, expiry)
+
     def option_expiries(self, ticker: str) -> List[dt.date]:
         chains = self._chains(ticker)
         if chains:

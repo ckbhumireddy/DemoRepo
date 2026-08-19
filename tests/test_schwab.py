@@ -159,6 +159,49 @@ def test_hybrid_serves_schwab_chains_and_caches():
     assert "option_chain" in fallback.calls
 
 
+class _LeapsSession:
+    """Serves a chain only for the exact-expiry request (a 2027 LEAPS)."""
+
+    def __init__(self):
+        self.requests = []
+
+    def get(self, path, params):
+        self.requests.append(params)
+        if params.get("fromDate") == "2027-09-17":
+            return {
+                "underlyingPrice": 250.0,
+                "callExpDateMap": {"2027-09-17:395": {"1500.0": [
+                    {"strikePrice": 1500.0, "bid": 640.0, "ask": 641.4,
+                     "closePrice": 772.0, "netChange": -131.3}]}},
+                "putExpDateMap": {},
+            }
+        return {"underlyingPrice": 250.0, "callExpDateMap": {},
+                "putExpDateMap": {}}
+
+
+def test_option_chain_at_fetches_exact_far_expiry():
+    fallback = _FallbackProvider()
+    session = _LeapsSession()
+    provider = SchwabMarketData(session, fallback)
+    expiry = dt.date(2027, 9, 17)
+    chain = provider.option_chain_at("SNDK", expiry)
+    assert chain is not None and chain.expiry == expiry
+    contract = chain.calls[0]
+    assert contract.day_change == -131.3          # Schwab netChange captured
+    assert "option_chain" not in fallback.calls   # no Yahoo fallback needed
+    # Second call is served from the cache — no new request.
+    provider.option_chain_at("SNDK", expiry)
+    assert len(session.requests) == 1
+
+
+def test_option_chain_at_falls_back_when_schwab_has_nothing():
+    fallback = _FallbackProvider()
+    provider = SchwabMarketData(_LeapsSession(), fallback)
+    chain = provider.option_chain_at("SNDK", dt.date(2027, 12, 17))
+    assert chain is not None                      # served by the fallback
+    assert "option_chain" in fallback.calls
+
+
 def test_build_provider_without_schwab_config_is_yahoo():
     cfg = AnalyzerConfig(dry_run=True)
     assert isinstance(build_provider(cfg), YFinanceMarketData)
