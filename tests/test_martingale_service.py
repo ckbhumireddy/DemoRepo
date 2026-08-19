@@ -254,6 +254,55 @@ def test_schwab_history_appends_intraday_close(monkeypatch):
     assert bars[-1].close == 6413.0     # last 30-min candle's close
 
 
+def _ms(*args):
+    return int(dt.datetime(*args, tzinfo=dt.timezone.utc).timestamp() * 1000)
+
+
+def test_bar_from_quote_close_time_guard():
+    from martingale_trader.service import bar_from_quote
+
+    def quote(ms):
+        return {"lastPrice": 7691.76, "openPrice": 7740.0,
+                "highPrice": 7750.0, "lowPrice": 7680.0,
+                "quoteTimeInLong": ms}
+
+    # Summer (EDT): 20:38 UTC = 16:38 ET -> accepted for that day.
+    bar = bar_from_quote(quote(_ms(2026, 8, 18, 20, 38)))
+    assert bar is not None and bar.day == dt.date(2026, 8, 18)
+    assert bar.close == 7691.76 and bar.high == 7750.0
+    # Summer: 19:00 UTC = 15:00 ET -> mid-session, rejected.
+    assert bar_from_quote(quote(_ms(2026, 8, 18, 19, 0))) is None
+    # Winter (EST): 21:38 UTC = 16:38 ET -> accepted.
+    assert bar_from_quote(quote(_ms(2026, 1, 15, 21, 38))) is not None
+    # Winter: 20:38 UTC = 15:38 ET -> rejected (the DST trap).
+    assert bar_from_quote(quote(_ms(2026, 1, 15, 20, 38))) is None
+    assert bar_from_quote({}) is None
+
+
+def test_quote_supplies_same_day_close(monkeypatch):
+    # History feeds (daily + intraday) end at D1; the after-close quote
+    # carries D2's close and wins.
+    from martingale_trader.service import SchwabHistory
+
+    class FakeSession:
+        def get(self, path, params):
+            if path == "/quotes":
+                return {"$SPX": {"quote": {
+                    "lastPrice": 7691.76,
+                    "quoteTimeInLong": _ms(D2.year, D2.month, D2.day, 20, 38),
+                }}}
+            if params["frequencyType"] == "daily":
+                return {"candles": [
+                    {"datetime": _ms(D1.year, D1.month, D1.day, 5),
+                     "open": 7740.0, "high": 7750.0, "low": 7700.0,
+                     "close": 7745.06, "volume": 1.0}]}
+            return {"candles": []}
+
+    bars = SchwabHistory(FakeSession()).price_history("$SPX")
+    assert [b.day for b in bars] == [D1, D2]
+    assert bars[-1].close == 7691.76
+
+
 def test_schwab_history_survives_intraday_failure(monkeypatch):
     from martingale_trader.service import SchwabHistory
 
