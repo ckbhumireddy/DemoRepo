@@ -57,8 +57,11 @@ jobs:
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           DRY_RUN: ${{ vars.DRY_RUN }}
           MARTINGALE_START_BALANCE: ${{ vars.MARTINGALE_START_BALANCE }}
+          MARTINGALE_CHAMPION: ${{ vars.MARTINGALE_CHAMPION }}
+          MARTINGALE_BASE_PCT: ${{ vars.MARTINGALE_BASE_PCT }}
           MARTINGALE_BASE_NOTIONAL: ${{ vars.MARTINGALE_BASE_NOTIONAL }}
-          MARTINGALE_MAX_DOUBLINGS: ${{ vars.MARTINGALE_MAX_DOUBLINGS }}
+          MARTINGALE_FACTOR: ${{ vars.MARTINGALE_FACTOR }}
+          MARTINGALE_MAX_NOTIONAL: ${{ vars.MARTINGALE_MAX_NOTIONAL }}
           # Schwab market data — REQUIRED: this trader prices from Schwab
           # only (no Yahoo fallback); the run fails without a live token.
           SCHWAB_APP_KEY: ${{ secrets.SCHWAB_APP_KEY }}

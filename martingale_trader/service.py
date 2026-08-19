@@ -44,6 +44,13 @@ logger = logging.getLogger(__name__)
 SYMBOL_LABEL = "SPX"
 
 
+def _ladder_base(config: MartingaleConfig, balance: float) -> float:
+    """Step-0 stake: a fraction of the balance, or fixed dollars."""
+    if config.martingale_base_pct > 0:
+        return round(config.martingale_base_pct * balance, 2)
+    return config.martingale_base_notional
+
+
 class SchwabHistory:
     """Daily bars from the Schwab ``/pricehistory`` endpoint, nothing else."""
 
@@ -135,17 +142,15 @@ def run_martingale(
 
     settled = None
     if prior:
-        settled = settle_open_round(
-            state, latest.day, latest.close,
-            max_doublings=config.martingale_max_doublings,
-        )
+        settled = settle_open_round(state, latest.day, latest.close)
 
     opened = None
     if not state["busted"]:
         notional = notional_for_step(
             state["step"],
-            config.martingale_base_notional,
-            config.martingale_max_doublings,
+            _ladder_base(config, state["balance"]),
+            config.martingale_factor,
+            config.martingale_max_notional,
         )
         opened = open_round(state, latest.day, latest.close, notional)
 
@@ -154,8 +159,9 @@ def run_martingale(
 
     summary = summarize(
         state,
-        config.martingale_base_notional,
-        config.martingale_max_doublings,
+        _ladder_base(config, state["balance"]),
+        config.martingale_factor,
+        config.martingale_max_notional,
     )
     subject, text, html_body = render_daily_email(
         summary, settled, opened, latest.day, symbol_label=SYMBOL_LABEL

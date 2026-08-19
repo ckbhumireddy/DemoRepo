@@ -66,7 +66,8 @@ def test_first_run_opens_round_and_emails(tmp_path, monkeypatch):
     assert "first round opened" in result.subject
     state = _state(config)
     assert state["open_round"]["entry_price"] == 6400.0
-    assert state["open_round"]["notional"] == 5000.0
+    # Champion sizing: 30% of the $25,000 balance at step 0.
+    assert state["open_round"]["notional"] == 7500.0
     assert state["balance"] == 25000.0
 
 
@@ -90,15 +91,20 @@ def test_next_day_settles_loss_and_doubles(tmp_path, monkeypatch):
     )
     assert (result.settled, result.opened) == (1, 1)
     state = _state(config)
-    assert state["balance"] == 24950.0
+    # -1% on the $7,500 step-0 stake.
+    assert state["balance"] == 24925.0
     assert state["step"] == 1
-    assert state["open_round"]["notional"] == 10000.0
-    assert state["rounds"][0]["pnl"] == -50.0
+    # Next stake: 30% of $24,925, tripled once.
+    assert state["open_round"]["notional"] == 22432.5
+    assert state["rounds"][0]["pnl"] == -75.0
 
 
 def test_bust_stops_trading(tmp_path, monkeypatch):
+    # Fixed-dollar mode (base_pct=0): the $5k stake can outsize the
+    # $100 account, so one -2% day busts it.
     _patch_notifier(monkeypatch)
-    config = _config(tmp_path, martingale_start_balance=100.0)
+    config = _config(tmp_path, martingale_start_balance=100.0,
+                     martingale_base_pct=0.0)
     run_martingale(config, today=D1, provider=FakeProvider([(D1, 6400.0)]))
     result = run_martingale(
         config, today=D2,
@@ -146,14 +152,16 @@ def test_no_bars_raises(tmp_path, monkeypatch):
         run_martingale(config, today=D1, provider=FakeProvider([]))
 
 
-def test_default_cap_is_160k():
-    # 5 doublings on the $5k base: the table limit is $160,000.
+def test_default_config_is_the_champion():
+    # 30% of balance, factor 3, $160k table limit.
     from martingale_trader.engine import notional_for_step
 
     config = MartingaleConfig()
-    assert config.martingale_max_doublings == 5
+    assert config.martingale_base_pct == 0.30
+    assert config.martingale_factor == 3.0
+    assert config.martingale_max_notional == 160000.0
     assert notional_for_step(
-        99, config.martingale_base_notional, config.martingale_max_doublings
+        99, 7500.0, config.martingale_factor, config.martingale_max_notional
     ) == 160000.0
 
 
