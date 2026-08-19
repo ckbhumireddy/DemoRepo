@@ -159,6 +159,42 @@ def test_hybrid_serves_schwab_chains_and_caches():
     assert "option_chain" in fallback.calls
 
 
+def test_get_retries_transient_5xx(monkeypatch):
+    import earnings_analyzer.schwab as schwab_mod
+
+    session = SchwabSession(
+        app_key="k", app_secret="s",
+        token_json='{"access_token": "a", "refresh_token": "r", '
+                   '"expires_at": 9999999999}',
+    )
+
+    class _Resp:
+        def __init__(self, status, payload=None):
+            self.status_code = status
+            self._payload = payload or {}
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+        def json(self):
+            return self._payload
+
+    calls = []
+
+    class _Requests:
+        @staticmethod
+        def get(url, headers=None, params=None, timeout=None):
+            calls.append(url)
+            return _Resp(502) if len(calls) == 1 else _Resp(200, {"ok": True})
+
+    import sys
+    monkeypatch.setitem(sys.modules, "requests", _Requests)
+    monkeypatch.setattr(schwab_mod.time, "sleep", lambda s: None)
+    assert session.get("/chains", {}) == {"ok": True}
+    assert len(calls) == 2                       # 502 then success
+
+
 def test_build_provider_without_schwab_config_is_yahoo():
     cfg = AnalyzerConfig(dry_run=True)
     assert isinstance(build_provider(cfg), YFinanceMarketData)
