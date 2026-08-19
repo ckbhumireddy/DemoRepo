@@ -31,6 +31,8 @@ def champion_cfg(preset: dict) -> Dict:
     if preset.get("withdraw_at"):
         cfg["withdraw_at"] = preset["withdraw_at"]
         cfg["withdraw_amount"] = preset["withdraw_amount"]
+    if preset.get("max_leverage"):
+        cfg["max_lev"] = preset["max_leverage"]
     return cfg
 
 

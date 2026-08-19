@@ -329,8 +329,12 @@ Sizing comes from a named preset in
 `martingale_trader/champions.json` (variable
 `MARTINGALE_CHAMPION`, default **tripledip**; `classic` is the
 original fixed-dollar demo ladder; `tripledip-harvest` is a
-research-only income variant — withdraw $25k at $75k — that the
-live trader refuses because it has no withdrawal support). Individual overrides:
+research-only income variant — withdraw $25k at $75k — and
+`doubledip-harvest` its risk-reduced sibling (40% base, x2 ladder:
+same $350k banked, max drawdown 22.5% vs 36.3%), and
+`compound-harvest` the high-cash point of the frontier ($480k banked
+in 2 harvests at 37.9% drawdown, 2x leverage clamp); the live trader
+refuses all three because it has no withdrawal support). Individual overrides:
 `MARTINGALE_START_BALANCE`, `MARTINGALE_BASE_PCT`,
 `MARTINGALE_BASE_NOTIONAL`, `MARTINGALE_FACTOR`,
 `MARTINGALE_MAX_NOTIONAL`.
