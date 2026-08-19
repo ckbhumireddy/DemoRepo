@@ -129,6 +129,24 @@ def test_option_triggers_dollar_gate_only():
     assert "-13,130" in triggers[0].detail
 
 
+def test_exact_expiry_fetch_preferred_when_available():
+    calls = []
+
+    class _Provider:
+        def option_chain_at(self, ticker, expiry):
+            calls.append("exact")
+            return _chain({("call", 1500.0): (640.70, 700.0),
+                           ("call", 1750.0): (575.30, 600.0)})
+
+        def option_chain(self, ticker, expiry):
+            calls.append("bulk")
+            return None
+
+    views = build_option_views(_positions(), _Provider(), TODAY)
+    assert calls == ["exact"]              # one fetch, exact-expiry path
+    assert all(v.market_value is not None for v in views)
+
+
 def test_parse_portfolio_merges_duplicate_contracts():
     snap = parse_portfolio({"positions": [], "options": [
         {"underlying": "NFLX", "expiry": "2026-12-18", "option_type": "call",
