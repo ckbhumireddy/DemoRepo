@@ -57,12 +57,17 @@ class SchwabChains:
         if self._cache is None:
             from earnings_analyzer.schwab import chains_from_payload, schwab_symbol
 
+            # strikeCount keeps the response small: an unfiltered $SPX
+            # chain over 3 weeks is thousands of contracts and Schwab
+            # 502s on it. 80 strikes around the money comfortably covers
+            # ~1.25% OTM shorts plus wings at 5-point spacing.
             payload = self._session.get(
                 "/chains",
                 {
                     "symbol": schwab_symbol(self._symbol),
                     "contractType": "ALL",
                     "strategy": "SINGLE",
+                    "strikeCount": 80,
                     "fromDate": today.isoformat(),
                     "toDate": (
                         today + dt.timedelta(days=horizon_days)
