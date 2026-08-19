@@ -227,6 +227,12 @@ def test_intraday_synthesizes_completed_session():
     assert daily_bar_from_intraday({"candles": []}) is None
     assert daily_bar_from_intraday(None) is None
 
+    # Newest day partial -> fall back to the older complete session.
+    two_days = {"candles": _intraday_candles(D1, 6.0)
+                + _intraday_candles(D2, 2.0)}
+    bar = daily_bar_from_intraday(two_days)
+    assert bar is not None and bar.day == D1
+
 
 def test_schwab_history_appends_intraday_close(monkeypatch):
     # Daily feed still shows D1; the completed D2 session fills the gap.

@@ -74,21 +74,20 @@ def daily_bar_from_intraday(payload):
             continue
         stamp = dt.datetime.fromtimestamp(ms / 1000, tz=dt.timezone.utc)
         by_day.setdefault(stamp.date(), []).append((stamp, candle))
-    if not by_day:
-        return None
-    day = max(by_day)
-    candles = sorted(by_day[day])
-    if candles[-1][0] - candles[0][0] < INTRADAY_FULL_SESSION:
-        return None  # session still in progress (or a short holiday day)
-    rows = [c for _, c in candles]
-    return PriceBar(
-        day=day,
-        open=rows[0].get("open") or rows[0]["close"],
-        high=max(c.get("high") or c["close"] for c in rows),
-        low=min(c.get("low") or c["close"] for c in rows),
-        close=rows[-1]["close"],
-        volume=sum(c.get("volume") or 0.0 for c in rows),
-    )
+    for day in sorted(by_day, reverse=True):
+        candles = sorted(by_day[day])
+        if candles[-1][0] - candles[0][0] < INTRADAY_FULL_SESSION:
+            continue  # in progress (or a short holiday day) — try older
+        rows = [c for _, c in candles]
+        return PriceBar(
+            day=day,
+            open=rows[0].get("open") or rows[0]["close"],
+            high=max(c.get("high") or c["close"] for c in rows),
+            low=min(c.get("low") or c["close"] for c in rows),
+            close=rows[-1]["close"],
+            volume=sum(c.get("volume") or 0.0 for c in rows),
+        )
+    return None
 
 
 class SchwabHistory:
@@ -119,12 +118,16 @@ class SchwabHistory:
         )
         bars = bars_from_candles(payload)
         try:
+            # Two days, not one: late in the evening Schwab's 1-day window
+            # can roll to the next (still empty) session and return nothing.
+            # daily_bar_from_intraday picks the newest COMPLETE session, so
+            # the extra day never changes which close is used.
             intraday = self._session.get(
                 "/pricehistory",
                 {
                     "symbol": symbol,
                     "periodType": "day",
-                    "period": 1,
+                    "period": 2,
                     "frequencyType": "minute",
                     "frequency": 30,
                     "needExtendedHoursData": "false",
