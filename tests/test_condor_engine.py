@@ -97,14 +97,39 @@ def test_bust_at_or_below_zero():
 
 
 # ----------------------------------------------------------------- sizing
+LADDER = (1, 2, 7, 20, 51)
+
+
 def test_qty_ladder_and_caps():
-    # risk/contract $390: ladder 1,2,4,8 ... capped by dollars and balance.
-    assert qty_for_step(0, 1, 2.0, 390.0, 10000.0, 25000.0) == 1
-    assert qty_for_step(2, 1, 2.0, 390.0, 10000.0, 25000.0) == 4
-    assert qty_for_step(6, 1, 2.0, 390.0, 10000.0, 25000.0) == 25   # $ cap
-    assert qty_for_step(6, 1, 2.0, 390.0, 10000.0, 1000.0) == 2     # balance
-    assert qty_for_step(0, 1, 2.0, 390.0, 100.0, 25000.0) == 0
-    assert qty_for_step(0, 1, 2.0, 0.0, 10000.0, 25000.0) == 0
+    # The levelQuantityMap ladder, risk $390/contract.
+    assert qty_for_step(0, LADDER, 390.0, 25000.0, 25000.0) == 1
+    assert qty_for_step(2, LADDER, 390.0, 25000.0, 25000.0) == 7
+    assert qty_for_step(3, LADDER, 390.0, 25000.0, 25000.0) == 20
+    # Past the last rung the quantity holds there.
+    assert qty_for_step(9, LADDER, 390.0, 25000.0, 25000.0) == 51
+    # Caps: dollar risk limit, then the balance.
+    assert qty_for_step(4, LADDER, 390.0, 10000.0, 25000.0) == 25
+    assert qty_for_step(4, LADDER, 390.0, 25000.0, 1000.0) == 2
+    assert qty_for_step(0, LADDER, 390.0, 100.0, 25000.0) == 0
+    assert qty_for_step(0, LADDER, 0.0, 25000.0, 25000.0) == 0
+
+
+def test_qty_ladder_parsing():
+    from earnings_notifier.config import ConfigError
+    import pytest
+    from condor_trader.config import _parse_qty_ladder
+
+    assert _parse_qty_ladder("") == LADDER                      # default
+    assert _parse_qty_ladder("[1, 2, 7, 20, 51]") == LADDER
+    assert _parse_qty_ladder("1,2,7,20,51") == LADDER
+    # The levelQuantityMap form, leading idle level dropped.
+    assert _parse_qty_ladder(
+        '{"1": 0, "2": 1, "3": 2, "4": 7, "5": 20, "6": 51}'
+    ) == LADDER
+    with pytest.raises(ConfigError):
+        _parse_qty_ladder('{"1": 0, "2": 0}')
+    with pytest.raises(ConfigError):
+        _parse_qty_ladder("not numbers")
 
 
 # ----------------------------------------------------------------- ledger

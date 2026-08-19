@@ -356,10 +356,12 @@ Martingale sizing applied to defined-risk option structures: one short
 **SPXW weekly iron condor** at a time (modeled on a reference trade:
 $5-point wings, short strikes ~1.25% out-of-the-money each side,
 nearest expiry 5-12 days out), held to cash settlement at the expiry
-close. The ladder sizes the CONTRACT COUNT: `base_qty x factor^step`
-(defaults 1 and 2), a losing week multiplies the next condor, a winning
-week resets it. Risk per position is capped at `CONDOR_MAX_RISK`
-(default $10k) AND the balance — so unlike the naked-index martingale,
+close. The ladder sizes the CONTRACT COUNT from a
+quantity table (default **1, 2, 7, 20, 51** — a levelQuantityMap
+recovery sequence; set `CONDOR_QTY_LADDER` to a JSON list, comma list,
+or level map), a losing week moves to the next rung, a winning week
+resets to the first. Risk per position is capped at `CONDOR_MAX_RISK`
+(default $25k) AND the balance — so unlike the naked-index martingale,
 the account cannot bust; it can only shrink until it is too small to
 trade.
 
@@ -369,8 +371,8 @@ any expired condor at that day's close, advance the ladder, open the
 next setup from the live Schwab chain, and email what happened. Chains
 and closes are Schwab-only. State: `state/condor.json`. Tuning:
 `CONDOR_START_BALANCE`, `CONDOR_OTM_PCT`, `CONDOR_WING`,
-`CONDOR_MIN_DTE`/`MAX_DTE`, `CONDOR_MIN_CREDIT`, `CONDOR_BASE_QTY`,
-`CONDOR_FACTOR`, `CONDOR_MAX_RISK`.
+`CONDOR_MIN_DTE`/`MAX_DTE`, `CONDOR_MIN_CREDIT`,
+`CONDOR_QTY_LADDER`, `CONDOR_MAX_RISK`.
 
 ```powershell
 python -m condor_trader --dry-run   # preview, nothing traded or sent
