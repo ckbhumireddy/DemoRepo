@@ -156,6 +156,11 @@ class SchwabHistory:
                 exc,
             )
             synth = None
+        logger.info(
+            "Intraday synthesis: %s; daily feed through %s",
+            synth.day if synth else "none",
+            bars[-1].day if bars else "empty",
+        )
         if synth and (not bars or synth.day > bars[-1].day):
             logger.info(
                 "Martingale: daily candle for %s not posted yet; using the "
