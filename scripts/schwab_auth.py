@@ -8,9 +8,11 @@ repository secret the workflow reads.
 Usage (from the repo root):
     python scripts/schwab_auth.py --set-secret
 
-Requires SCHWAB_APP_KEY / SCHWAB_APP_SECRET in the environment (or pass
---app-key/--app-secret). The app's callback URL on developer.schwab.com must
-match --callback (default https://127.0.0.1).
+Requires SCHWAB_APP_KEY / SCHWAB_APP_SECRET, from (in order): the
+--app-key/--app-secret flags, the environment, or a KEY=VALUE env file —
+a ``.env`` in the current directory is loaded automatically, or pass
+--env-file. The app's callback URL on developer.schwab.com must match
+--callback (default https://127.0.0.1).
 
 Steps it performs:
   1. Prints the Schwab authorize URL — open it, log in, approve.
@@ -37,16 +39,47 @@ AUTHORIZE_URL = "https://api.schwabapi.com/v1/oauth/authorize"
 TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token"
 
 
+def load_env_file(path: str) -> bool:
+    """Load KEY=VALUE lines into the environment (existing values win)."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        return False
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--app-key", default=os.environ.get("SCHWAB_APP_KEY", ""))
-    parser.add_argument("--app-secret", default=os.environ.get("SCHWAB_APP_SECRET", ""))
+    parser.add_argument("--app-key", default="")
+    parser.add_argument("--app-secret", default="")
+    parser.add_argument("--env-file", default=None,
+                        help="KEY=VALUE file with the app credentials "
+                             "(default: ./.env when present)")
     parser.add_argument("--callback", default="https://127.0.0.1",
                         help="must exactly match the app's registered callback URL")
     parser.add_argument("--output", default="schwab_token.json")
     parser.add_argument("--set-secret", action="store_true",
                         help="also push the token to the SCHWAB_TOKEN repo secret via gh")
     args = parser.parse_args()
+
+    env_file = args.env_file or (".env" if os.path.exists(".env") else None)
+    if env_file:
+        if load_env_file(env_file):
+            print(f"Loaded environment from {env_file}")
+        elif args.env_file:
+            print(f"Could not read {args.env_file}", file=sys.stderr)
+            return 2
+    args.app_key = args.app_key or os.environ.get("SCHWAB_APP_KEY", "")
+    args.app_secret = args.app_secret or os.environ.get("SCHWAB_APP_SECRET", "")
 
     if not args.app_key or not args.app_secret:
         print("Set SCHWAB_APP_KEY / SCHWAB_APP_SECRET (or use --app-key/--app-secret).",
