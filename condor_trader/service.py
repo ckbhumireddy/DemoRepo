@@ -173,7 +173,7 @@ def run_condor(
             wing = picked["short_put"] - picked["long_put"]
             risk_per = (wing - picked["credit"]) * 100.0
             qty = qty_for_step(
-                data["step"], config.condor_base_qty, config.condor_factor,
+                data["step"], config.condor_qty_ladder,
                 risk_per, config.condor_max_risk, data["balance"],
             )
             if qty >= 1:

@@ -9,11 +9,12 @@ condors (the shape of the reference SPXW trade):
 - Hold to expiration. SPXW is cash-settled: the position settles at
   intrinsic value against the expiry day's closing level. Win = keep
   the credit; loss = wing - credit per share.
-- The martingale ladder sizes the CONTRACT COUNT:
-      qty = base_qty * factor**step
-  capped so the position's max loss never exceeds ``max_risk`` dollars
-  or the current balance. A losing settlement moves the ladder one
-  step up, a winning one resets it, a scratch holds it.
+- The martingale ladder sizes the CONTRACT COUNT from a quantity
+  sequence (default 1, 2, 7, 20, 51 — a recovery table for rich
+  condors), capped so the position's max loss never exceeds
+  ``max_risk`` dollars or the current balance. A losing settlement
+  moves the ladder one step up, a winning one resets it, a scratch
+  holds it; past the last rung the quantity holds there.
 - The account busts at $0 and never trades again.
 
 Ledger schema v1 (JSON, persisted via the workflow cache).
@@ -153,13 +154,17 @@ def pick_condor(chain, otm_pct: float, wing: float) -> Optional[dict]:
 # Martingale sizing
 # --------------------------------------------------------------------- #
 def qty_for_step(
-    step: int, base_qty: int, factor: float,
+    step: int, ladder,
     risk_per_contract: float, max_risk: float, balance: float,
 ) -> int:
-    """Ladder quantity, capped by the dollar risk limit AND the balance."""
-    if risk_per_contract <= 0:
+    """Ladder quantity, capped by the dollar risk limit AND the balance.
+
+    ``ladder`` is the contracts-per-step sequence (e.g. 1, 2, 7, 20, 51);
+    past the last entry the quantity holds there until a win resets.
+    """
+    if risk_per_contract <= 0 or not ladder:
         return 0
-    want = int(base_qty * factor ** min(step, MAX_STEP))
+    want = int(ladder[min(step, len(ladder) - 1)])
     cap = int(min(max_risk, balance) // risk_per_contract)
     return max(0, min(want, cap))
 

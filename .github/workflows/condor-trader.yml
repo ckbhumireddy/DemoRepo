@@ -58,8 +58,7 @@ jobs:
           CONDOR_START_BALANCE: ${{ vars.CONDOR_START_BALANCE }}
           CONDOR_OTM_PCT: ${{ vars.CONDOR_OTM_PCT }}
           CONDOR_WING: ${{ vars.CONDOR_WING }}
-          CONDOR_BASE_QTY: ${{ vars.CONDOR_BASE_QTY }}
-          CONDOR_FACTOR: ${{ vars.CONDOR_FACTOR }}
+          CONDOR_QTY_LADDER: ${{ vars.CONDOR_QTY_LADDER }}
           CONDOR_MAX_RISK: ${{ vars.CONDOR_MAX_RISK }}
           # Schwab market data — REQUIRED: chains and closes come from
           # Schwab only (no Yahoo fallback); the run fails without a
