@@ -24,6 +24,16 @@
     "withdraw_at": 75000.0,
     "withdraw_amount": 25000.0
   },
+  "compound-harvest": {
+    "description": "High-cash harvest preset (823k-config long-run research, 2026-08-19): 40% of balance, x1.65 per losing day, notional capped at $400k AND 2x the balance, withdraw $240,000 whenever the balance reaches $320,000. 1990-2026: $480,000 banked in 2 harvests, max equity drawdown 37.9%, worst CAGR 8.95%, stress 9.60%, survives 1.5x stress (10.09%), 16/16 neighbor configs pass all gates. More cash than tripledip-harvest at similar risk, but a different risk class than doubledip-harvest (22.5% dd) and very lumpy income. Research-only: the live trader supports neither withdrawals nor leverage clamps.",
+    "base_pct": 0.4,
+    "base_notional": 0.0,
+    "factor": 1.65,
+    "max_notional": 400000.0,
+    "max_leverage": 2.0,
+    "withdraw_at": 320000.0,
+    "withdraw_amount": 240000.0
+  },
   "classic": {
     "description": "The original fixed-dollar demonstration ladder: $5,000 x2 per losing day, $160k cap. Kept as the martingale failure-mode demo.",
     "base_pct": 0.0,

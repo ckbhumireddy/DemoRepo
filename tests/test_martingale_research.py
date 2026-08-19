@@ -187,3 +187,12 @@ def test_research_only_champion_is_refused_live(monkeypatch):
     monkeypatch.setenv("MARTINGALE_CHAMPION", "doubledip-harvest")
     with pytest.raises(ConfigError, match="research-only"):
         MartingaleConfig.from_env()
+
+    # The high-cash variant adds a leverage clamp; also live-refused.
+    compound = load_champion("compound-harvest")
+    cfg = champion_cfg(compound)
+    assert cfg["max_lev"] == 2.0
+    assert cfg["factor"] == 1.65 and cfg["withdraw_amount"] == 240000.0
+    monkeypatch.setenv("MARTINGALE_CHAMPION", "compound-harvest")
+    with pytest.raises(ConfigError, match="research-only"):
+        MartingaleConfig.from_env()
