@@ -51,8 +51,54 @@ def _ladder_base(config: MartingaleConfig, balance: float) -> float:
     return config.martingale_base_notional
 
 
+# A complete SPX session's 30-minute candles run 9:30 to 15:30 at the
+# last candle's open — 6 hours first-to-last. Requiring (nearly) that
+# span rejects partial days without any timezone arithmetic; a run
+# during market hours simply falls back to the last posted daily bar.
+INTRADAY_FULL_SESSION = dt.timedelta(hours=5, minutes=54)
+
+
+def daily_bar_from_intraday(payload):
+    """One synthesized daily bar from a day of intraday candles.
+
+    Returns None unless the newest day's candles span a full session.
+    (An ET session never crosses UTC midnight, so grouping candles by
+    their UTC date groups them by trading day.)
+    """
+    from earnings_analyzer.models import PriceBar
+
+    by_day = {}
+    for candle in (payload or {}).get("candles", []):
+        ms, close = candle.get("datetime"), candle.get("close")
+        if ms is None or close is None or close <= 0:
+            continue
+        stamp = dt.datetime.fromtimestamp(ms / 1000, tz=dt.timezone.utc)
+        by_day.setdefault(stamp.date(), []).append((stamp, candle))
+    if not by_day:
+        return None
+    day = max(by_day)
+    candles = sorted(by_day[day])
+    if candles[-1][0] - candles[0][0] < INTRADAY_FULL_SESSION:
+        return None  # session still in progress (or a short holiday day)
+    rows = [c for _, c in candles]
+    return PriceBar(
+        day=day,
+        open=rows[0].get("open") or rows[0]["close"],
+        high=max(c.get("high") or c["close"] for c in rows),
+        low=min(c.get("low") or c["close"] for c in rows),
+        close=rows[-1]["close"],
+        volume=sum(c.get("volume") or 0.0 for c in rows),
+    )
+
+
 class SchwabHistory:
-    """Daily bars from the Schwab ``/pricehistory`` endpoint, nothing else."""
+    """Daily bars from the Schwab ``/pricehistory`` endpoint, nothing else.
+
+    Schwab posts the official daily candle hours after the close, so a
+    16:45 ET run would otherwise only see yesterday. When the intraday
+    feed shows a completed session newer than the last daily candle,
+    its close is appended as the day's bar.
+    """
 
     def __init__(self, session) -> None:
         self._session = session
@@ -60,17 +106,45 @@ class SchwabHistory:
     def price_history(self, ticker: str, days: int = 30):
         from earnings_analyzer.schwab import bars_from_candles, schwab_symbol
 
+        symbol = schwab_symbol(ticker)
         payload = self._session.get(
             "/pricehistory",
             {
-                "symbol": schwab_symbol(ticker),
+                "symbol": symbol,
                 "periodType": "month",
                 "period": 1,
                 "frequencyType": "daily",
                 "frequency": 1,
             },
         )
-        return bars_from_candles(payload)
+        bars = bars_from_candles(payload)
+        try:
+            intraday = self._session.get(
+                "/pricehistory",
+                {
+                    "symbol": symbol,
+                    "periodType": "day",
+                    "period": 1,
+                    "frequencyType": "minute",
+                    "frequency": 30,
+                    "needExtendedHoursData": "false",
+                },
+            )
+            synth = daily_bar_from_intraday(intraday)
+        except Exception as exc:  # noqa: BLE001 - enhancement, not a dependency
+            logger.warning(
+                "Intraday close fetch failed (%s); using daily candles only",
+                exc,
+            )
+            synth = None
+        if synth and (not bars or synth.day > bars[-1].day):
+            logger.info(
+                "Martingale: daily candle for %s not posted yet; using the "
+                "close %.2f from the completed intraday session",
+                synth.day, synth.close,
+            )
+            bars.append(synth)
+        return bars
 
 
 def _schwab_provider(config: MartingaleConfig) -> SchwabHistory:

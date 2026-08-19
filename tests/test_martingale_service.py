@@ -193,4 +193,72 @@ def test_schwab_history_requests_spx_daily_bars(monkeypatch):
     assert calls[0][0] == "/pricehistory"
     assert calls[0][1]["symbol"] == "$SPX"
     assert calls[0][1]["frequencyType"] == "daily"
+    assert calls[1][1]["frequencyType"] == "minute"
+    assert len(bars) == 1 and bars[0].close == 6405.0
+
+
+def _intraday_candles(day_utc, hours, base=6400.0):
+    """30-minute candles starting 13:30 UTC (9:30 ET) for `hours` hours."""
+    start = dt.datetime(day_utc.year, day_utc.month, day_utc.day, 13, 30,
+                        tzinfo=dt.timezone.utc)
+    out = []
+    for i in range(int(hours * 2) + 1):
+        ts = start + dt.timedelta(minutes=30 * i)
+        out.append({"datetime": int(ts.timestamp() * 1000),
+                    "open": base + i, "high": base + i + 2,
+                    "low": base + i - 2, "close": base + i + 1,
+                    "volume": 10.0})
+    return out
+
+
+def test_intraday_synthesizes_completed_session():
+    from martingale_trader.service import daily_bar_from_intraday
+
+    full = {"candles": _intraday_candles(D2, 6.0)}      # 9:30-15:30 ET
+    bar = daily_bar_from_intraday(full)
+    assert bar is not None
+    assert bar.day == D2
+    assert bar.close == full["candles"][-1]["close"]
+    assert bar.open == full["candles"][0]["open"]
+    assert bar.high == max(c["high"] for c in full["candles"])
+
+    partial = {"candles": _intraday_candles(D2, 3.0)}   # mid-session
+    assert daily_bar_from_intraday(partial) is None
+    assert daily_bar_from_intraday({"candles": []}) is None
+    assert daily_bar_from_intraday(None) is None
+
+
+def test_schwab_history_appends_intraday_close(monkeypatch):
+    # Daily feed still shows D1; the completed D2 session fills the gap.
+    from martingale_trader.service import SchwabHistory
+
+    class FakeSession:
+        def get(self, path, params):
+            if params["frequencyType"] == "daily":
+                return {"candles": [
+                    {"datetime": int(dt.datetime(
+                        D1.year, D1.month, D1.day, 5,
+                        tzinfo=dt.timezone.utc).timestamp() * 1000),
+                     "open": 6400.0, "high": 6410.0, "low": 6390.0,
+                     "close": 6400.0, "volume": 1.0}]}
+            return {"candles": _intraday_candles(D2, 6.0)}
+
+    bars = SchwabHistory(FakeSession()).price_history("$SPX")
+    assert [b.day for b in bars] == [D1, D2]
+    assert bars[-1].close == 6413.0     # last 30-min candle's close
+
+
+def test_schwab_history_survives_intraday_failure(monkeypatch):
+    from martingale_trader.service import SchwabHistory
+
+    class FakeSession:
+        def get(self, path, params):
+            if params["frequencyType"] == "daily":
+                return {"candles": [
+                    {"datetime": 1755475200000, "open": 6400.0,
+                     "high": 6410.0, "low": 6390.0, "close": 6405.0,
+                     "volume": 1.0}]}
+            raise RuntimeError("intraday endpoint down")
+
+    bars = SchwabHistory(FakeSession()).price_history("$SPX")
     assert len(bars) == 1 and bars[0].close == 6405.0
