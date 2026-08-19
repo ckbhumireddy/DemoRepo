@@ -298,7 +298,7 @@ close to close ($25,000 start):
 
 - The stake is a notional exposure: **$5,000 × 2^step**.
 - A losing day doubles the stake; a winning day resets it to $5,000; a
-  flat day holds it. The ladder caps at 6 doublings ($320,000 — the
+  flat day holds it. The ladder caps at 5 doublings ($160,000 — the
   "table limit"), and the notional may exceed the balance (paper
   leverage), because that is exactly the failure mode martingale hides.
 - The account **busts** when the balance reaches $0; a busted account

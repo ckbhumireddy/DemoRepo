@@ -21,7 +21,10 @@ class MartingaleConfig(Config):
     # The stake ladder: notional = base * 2**step, capped at
     # base * 2**max_doublings (the "table limit").
     martingale_base_notional: float = 5000.0
-    martingale_max_doublings: int = 6
+    # 5 doublings on the $5k base = a $160k table limit. The 2007-2009
+    # backtest killed the $320k ladder (one -7.6% day at the cap is
+    # -$24k); $160k halves the worst single-day loss.
+    martingale_max_doublings: int = 5
     # Schwab symbol for the S&P 500 index.
     martingale_symbol: str = "$SPX"
 
@@ -46,7 +49,7 @@ class MartingaleConfig(Config):
             martingale_base_notional=_get_float(
                 "MARTINGALE_BASE_NOTIONAL", 5000.0
             ),
-            martingale_max_doublings=_get_int("MARTINGALE_MAX_DOUBLINGS", 6),
+            martingale_max_doublings=_get_int("MARTINGALE_MAX_DOUBLINGS", 5),
             martingale_symbol=os.environ.get(
                 "MARTINGALE_SYMBOL", "$SPX"
             ).strip(),

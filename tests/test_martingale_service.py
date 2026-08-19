@@ -146,6 +146,17 @@ def test_no_bars_raises(tmp_path, monkeypatch):
         run_martingale(config, today=D1, provider=FakeProvider([]))
 
 
+def test_default_cap_is_160k():
+    # 5 doublings on the $5k base: the table limit is $160,000.
+    from martingale_trader.engine import notional_for_step
+
+    config = MartingaleConfig()
+    assert config.martingale_max_doublings == 5
+    assert notional_for_step(
+        99, config.martingale_base_notional, config.martingale_max_doublings
+    ) == 160000.0
+
+
 def test_missing_schwab_credentials_abort_the_run(tmp_path, monkeypatch):
     # Schwab only, no Yahoo fallback: without credentials the run fails
     # before it touches any market data.
