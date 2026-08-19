@@ -27,16 +27,22 @@ def test_liquid_chain_passes():
     assert round(report.atm_spread_pct, 1) == 6.7  # 0.20 / 3.00
 
 
-def test_low_open_interest_fails():
-    report = screen_liquidity(_chain(oi=50))
-    assert report.tradeable is False
-    assert any("open interest" in r for r in report.reasons)
+def test_low_open_interest_alone_passes_on_volume():
+    """Fresh weekly expiries have thin OI but live volume — depth proven."""
+    report = screen_liquidity(_chain(oi=50, vol=500))
+    assert report.tradeable is True
 
 
-def test_low_volume_fails():
-    report = screen_liquidity(_chain(vol=5))
+def test_low_volume_alone_passes_on_open_interest():
+    """A quiet morning on an established chain — depth proven by OI."""
+    report = screen_liquidity(_chain(oi=1500, vol=5))
+    assert report.tradeable is True
+
+
+def test_both_thin_fails():
+    report = screen_liquidity(_chain(oi=50, vol=5))
     assert report.tradeable is False
-    assert any("volume" in r for r in report.reasons)
+    assert any("thin depth" in r for r in report.reasons)
 
 
 def test_wide_spread_fails():
@@ -55,5 +61,4 @@ def test_empty_chain_fails():
 def test_missing_quote_fields_fail_with_reasons():
     report = screen_liquidity(_chain(oi=None, vol=None))
     assert report.tradeable is False
-    assert "open interest unavailable" in report.reasons
-    assert "volume unavailable" in report.reasons
+    assert any("thin depth" in r and "n/a" in r for r in report.reasons)

@@ -23,7 +23,15 @@ def screen_liquidity(
     min_option_volume: float = 50,
     max_spread_pct: float = 8.0,
 ) -> LiquidityReport:
-    """Judge tradeability from the ATM call + put of the event-expiry chain."""
+    """Judge tradeability from the ATM call + put of the event-expiry chain.
+
+    The spread is the only hard cost gate. Open interest and volume are
+    *substitutes*, not independent gates: a freshly listed weekly expiry
+    (or a gap-day momentum name) shows thin open interest — it accrues
+    only overnight — while live volume proves the market is there, and a
+    quiet established chain shows the reverse. Either signal passes depth;
+    only both thin fails. (Same rule as the paper trader's screen.)
+    """
     atm: List[OptionContract] = [
         c for c in (chain.atm_call(), chain.atm_put()) if c is not None
     ]
@@ -35,17 +43,15 @@ def screen_liquidity(
     spread = _avg([c.spread_pct for c in atm])
 
     reasons: List[str] = []
-    if oi is None or oi < min_open_interest:
+    oi_ok = oi is not None and oi >= min_open_interest
+    volume_ok = volume is not None and volume >= min_option_volume
+    if not oi_ok and not volume_ok:
         reasons.append(
-            f"open interest {oi:.0f} < {min_open_interest:.0f}"
-            if oi is not None
-            else "open interest unavailable"
-        )
-    if volume is None or volume < min_option_volume:
-        reasons.append(
-            f"volume {volume:.0f} < {min_option_volume:.0f}"
-            if volume is not None
-            else "volume unavailable"
+            "thin depth: open interest "
+            + (f"{oi:.0f}" if oi is not None else "n/a")
+            + f" < {min_open_interest:.0f} and volume "
+            + (f"{volume:.0f}" if volume is not None else "n/a")
+            + f" < {min_option_volume:.0f}"
         )
     if spread is None or spread > max_spread_pct:
         reasons.append(
