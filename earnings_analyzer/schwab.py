@@ -237,6 +237,15 @@ class SchwabSession:
                 params=params,
                 timeout=self.timeout,
             )
+        elif response.status_code in (502, 503, 504):
+            # Transient server-side hiccup — one retry after a short pause.
+            time.sleep(2)
+            response = requests.get(
+                MARKET_DATA_BASE + path,
+                headers={"Authorization": f"Bearer {self._access_token()}"},
+                params=params,
+                timeout=self.timeout,
+            )
         response.raise_for_status()
         return response.json()
 
