@@ -1,14 +1,14 @@
 {
   "tripledip": {
-    "description": "30% of balance, x3 per losing day, $160k cap. Champion of the 1990-2026 autoresearch run: worst CAGR 8.84% across 5 start years, no bust, survives the 1.25x volatility stress gate on a flat parameter plateau.",
-    "base_pct": 0.30,
+    "description": "30% of balance, x3 per losing day, $160k cap. Champion of the 1990-2026 autoresearch run: worst CAGR 8.84% across 5 start years, no bust, survives the 1.25x volatility stress gate on a flat parameter plateau. SPY total-return check (1993-2026, dividends included): $581,299 (9.83%/yr, max dd 29.3%) vs buy-and-hold SPY $797,922 (10.87%/yr) \u2014 with dividends counted, buy-and-hold wins; the ladder's edge is smaller drawdowns, not higher returns.",
+    "base_pct": 0.3,
     "base_notional": 5000.0,
     "factor": 3.0,
     "max_notional": 160000.0
   },
   "tripledip-harvest": {
-    "description": "Income variant of tripledip: same sizing, plus withdraw $25,000 whenever the balance reaches $75,000. 1990-2026 benchmark: 7.99% worst CAGR (vs 8.84% without withdrawals), $350,000 banked across 14 withdrawals, at-risk balance capped near $75k, no busts. Research-only: the live trader has no withdrawal support and refuses this preset.",
-    "base_pct": 0.30,
+    "description": "Income variant of tripledip: same sizing, plus withdraw $25,000 whenever the balance reaches $75,000. 1990-2026 benchmark: 7.99% worst CAGR (vs 8.84% without withdrawals), $350,000 banked across 14 withdrawals, at-risk balance capped near $75k, no busts. Research-only: the live trader has no withdrawal support and refuses this preset. SPY total-return check (1993-2026): $375,000 banked in 15 withdrawals, total equity $430,093 (8.85%/yr, max dd 21.8%) vs buy-and-hold SPY 10.87%/yr.",
+    "base_pct": 0.3,
     "base_notional": 0.0,
     "factor": 3.0,
     "max_notional": 160000.0,
@@ -16,7 +16,7 @@
     "withdraw_amount": 25000.0
   },
   "doubledip-harvest": {
-    "description": "Risk-reduced harvest variant (Pareto-frontier research, 2026-08-19): 40% of balance, x2 per losing day, $160k cap, withdraw $25,000 at $75,000. 1990-2026: the same $350,000 banked in the same 14 withdrawals as tripledip-harvest, but max equity drawdown 22.5% vs 36.3% (the gentler ladder escalates half as hard into crashes); worst CAGR 7.87%, stress 8.40%, no busts. Research-only: the live trader has no withdrawal support and refuses this preset.",
+    "description": "Risk-reduced harvest variant (Pareto-frontier research, 2026-08-19): 40% of balance, x2 per losing day, $160k cap, withdraw $25,000 at $75,000. 1990-2026: the same $350,000 banked in the same 14 withdrawals as tripledip-harvest, but max equity drawdown 22.5% vs 36.3% (the gentler ladder escalates half as hard into crashes); worst CAGR 7.87%, stress 8.40%, no busts. Research-only: the live trader has no withdrawal support and refuses this preset. SPY total-return check (1993-2026): $325,000 banked in 13 withdrawals, total equity $398,710 (8.60%/yr, max dd 21.6%) vs buy-and-hold SPY 10.87%/yr.",
     "base_pct": 0.4,
     "base_notional": 0.0,
     "factor": 2.0,
@@ -25,7 +25,7 @@
     "withdraw_amount": 25000.0
   },
   "compound-harvest": {
-    "description": "High-cash harvest preset (823k-config long-run research, 2026-08-19): 40% of balance, x1.65 per losing day, notional capped at $400k AND 2x the balance, withdraw $240,000 whenever the balance reaches $320,000. 1990-2026: $480,000 banked in 2 harvests, max equity drawdown 37.9%, worst CAGR 8.95%, stress 9.60%, survives 1.5x stress (10.09%), 16/16 neighbor configs pass all gates. More cash than tripledip-harvest at similar risk, but a different risk class than doubledip-harvest (22.5% dd) and very lumpy income. Research-only: the live trader supports neither withdrawals nor leverage clamps.",
+    "description": "High-cash harvest preset (823k-config long-run research, 2026-08-19): 40% of balance, x1.65 per losing day, notional capped at $400k AND 2x the balance, withdraw $240,000 whenever the balance reaches $320,000. 1990-2026: $480,000 banked in 2 harvests, max equity drawdown 37.9%, worst CAGR 8.95%, stress 9.60%, survives 1.5x stress (10.09%), 16/16 neighbor configs pass all gates. More cash than tripledip-harvest at similar risk, but a different risk class than doubledip-harvest (22.5% dd) and very lumpy income. Research-only: the live trader supports neither withdrawals nor leverage clamps. SPY total-return check (1993-2026): $480,000 banked in 2 withdrawals, total equity $591,560 (9.89%/yr, max dd 38.0%) vs buy-and-hold SPY 10.87%/yr.",
     "base_pct": 0.4,
     "base_notional": 0.0,
     "factor": 1.65,

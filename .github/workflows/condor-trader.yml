@@ -1,0 +1,85 @@
+name: Condor martingale trader
+
+# One run per weekday, after the close. PRIMARY trigger: the external
+# scheduler (cron-job.org, timezone America/New_York) calls the
+# workflow_dispatch API at exactly 16:50 ET.
+#
+# The cron below is only a FALLBACK (GitHub starts scheduled runs 55-75
+# minutes late on shared runners). Double runs are harmless: the run is
+# idempotent once a condor is open. NOTE: cron is UTC — when DST ends
+# (November), shift it +1h.
+
+on:
+  schedule:
+    - cron: "5 21 * * 1-5"   # fallback; lands ~22:00-22:20 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only (do not trade or email)"
+        type: boolean
+        default: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Rolling state cache shared with the other workflows (caches are
+      # repo-scoped): state/condor.json rides alongside martingale.json.
+      - name: Persist condor state
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: earnings-state-${{ github.run_id }}
+          restore-keys: |
+            earnings-state-
+
+      - name: Run condor trader
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+          CONDOR_START_BALANCE: ${{ vars.CONDOR_START_BALANCE }}
+          CONDOR_OTM_PCT: ${{ vars.CONDOR_OTM_PCT }}
+          CONDOR_WING: ${{ vars.CONDOR_WING }}
+          CONDOR_BASE_QTY: ${{ vars.CONDOR_BASE_QTY }}
+          CONDOR_FACTOR: ${{ vars.CONDOR_FACTOR }}
+          CONDOR_MAX_RISK: ${{ vars.CONDOR_MAX_RISK }}
+          # Schwab market data — REQUIRED: chains and closes come from
+          # Schwab only (no Yahoo fallback); the run fails without a
+          # live token.
+          SCHWAB_APP_KEY: ${{ secrets.SCHWAB_APP_KEY }}
+          SCHWAB_APP_SECRET: ${{ secrets.SCHWAB_APP_SECRET }}
+          SCHWAB_TOKEN: ${{ secrets.SCHWAB_TOKEN }}
+        run: |
+          python -m condor_trader \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python scripts/send_alert.py

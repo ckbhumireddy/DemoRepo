@@ -350,6 +350,36 @@ python -m martingale_trader --dry-run   # preview, nothing traded or sent
 > Educational only; martingale does not create an edge, it only
 > reshapes when the losses arrive.
 
+## Iron-Condor Martingale (condor_trader)
+
+Martingale sizing applied to defined-risk option structures: one short
+**SPXW weekly iron condor** at a time (modeled on a reference trade:
+$5-point wings, short strikes ~1.25% out-of-the-money each side,
+nearest expiry 5-12 days out), held to cash settlement at the expiry
+close. The ladder sizes the CONTRACT COUNT: `base_qty x factor^step`
+(defaults 1 and 2), a losing week multiplies the next condor, a winning
+week resets it. Risk per position is capped at `CONDOR_MAX_RISK`
+(default $10k) AND the balance — so unlike the naked-index martingale,
+the account cannot bust; it can only shrink until it is too small to
+trade.
+
+One run per weekday (~16:50 ET, same cron-job.org + fallback-cron
+pattern; POST to `.../workflows/condor-trader.yml/dispatches`): settle
+any expired condor at that day's close, advance the ladder, open the
+next setup from the live Schwab chain, and email what happened. Chains
+and closes are Schwab-only. State: `state/condor.json`. Tuning:
+`CONDOR_START_BALANCE`, `CONDOR_OTM_PCT`, `CONDOR_WING`,
+`CONDOR_MIN_DTE`/`MAX_DTE`, `CONDOR_MIN_CREDIT`, `CONDOR_BASE_QTY`,
+`CONDOR_FACTOR`, `CONDOR_MAX_RISK`.
+
+```powershell
+python -m condor_trader --dry-run   # preview, nothing traded or sent
+```
+
+> A condor loses several times its credit, so a doubling ladder needs
+> multiple wins to recover one loss — the demonstration here is how
+> fast defined-risk sizing hits its cap. Educational only.
+
 ## Ladder Research (martingale_research)
 
 The offline autoresearch harness that produced the **tripledip**
