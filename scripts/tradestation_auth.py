@@ -87,6 +87,9 @@ def main() -> int:
     parser.add_argument("--callback", default="http://localhost",
                         help="must exactly match the app's registered redirect URI")
     parser.add_argument("--output", default="tradestation_token.json")
+    parser.add_argument("--public-client", action="store_true",
+                        help="the app is a public/PKCE client with no secret; "
+                             "without this a missing secret is an error")
     parser.add_argument("--set-secret", action="store_true",
                         help="also push the token to the TRADESTATION_TOKEN "
                              "repo secret via gh")
@@ -103,6 +106,30 @@ def main() -> int:
     args.client_secret = args.client_secret or os.environ.get(
         "TRADESTATION_CLIENT_SECRET", ""
     )
+
+    if args.client_id and not args.client_secret and not args.public_client:
+        # Sending the exchange without a secret gets a bare
+        # "401 access_denied / Unauthorized" from TradeStation, which says
+        # nothing about the actual cause. Stop here instead.
+        print(
+            "TRADESTATION_CLIENT_SECRET is not set. TradeStation requires the "
+            "client secret to exchange the authorization code; without it the "
+            "token call fails with a bare 401 access_denied.",
+            file=sys.stderr,
+        )
+        if env_file:
+            print(
+                f"\n{env_file} was loaded but TRADESTATION_CLIENT_SECRET was "
+                "not set by it — check the line is not commented out with a "
+                "leading '#'.",
+                file=sys.stderr,
+            )
+        print(
+            "\nIf your app really is a public (PKCE) client with no secret, "
+            "re-run with --public-client.",
+            file=sys.stderr,
+        )
+        return 2
 
     if not args.client_id:
         print("Set TRADESTATION_CLIENT_ID (or use --client-id).", file=sys.stderr)
@@ -149,6 +176,18 @@ def main() -> int:
     if response.status_code != 200:
         print(f"Token exchange failed ({response.status_code}): {response.text}",
               file=sys.stderr)
+        if response.status_code in (400, 401):
+            print(
+                "\nThe usual causes, in the order worth checking:\n"
+                "  - the client secret is wrong or missing (a bare "
+                "'access_denied / Unauthorized' is what that looks like)\n"
+                f"  - --callback ({args.callback}) does not exactly match the "
+                "redirect URI registered on the app\n"
+                "  - the authorization code was already used or has expired "
+                "(they are single-use and last about a minute) — re-run and "
+                "paste a fresh one promptly",
+                file=sys.stderr,
+            )
         return 1
 
     payload = response.json()

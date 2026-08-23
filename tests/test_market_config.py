@@ -152,3 +152,34 @@ def test_a_loaded_env_file_explains_a_missing_client_id(tmp_path, monkeypatch,
     stderr = capsys.readouterr().err
     assert "was loaded but TRADESTATION_CLIENT_ID was not set" in stderr
     assert "commented out" in stderr
+
+
+def test_setup_stops_before_a_confusing_401_when_the_secret_is_missing(
+    tmp_path, monkeypatch, capsys
+):
+    # Without the secret TradeStation answers the exchange with a bare
+    # "401 access_denied", which says nothing about the cause.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "TRADESTATION_CLIENT_ID=abc\n# TRADESTATION_CLIENT_SECRET=s3\n",
+        encoding="utf-8",
+    )
+    with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch("sys.argv", ["tradestation_auth.py"]):
+            assert tradestation_auth.main() == 2
+    stderr = capsys.readouterr().err
+    assert "TRADESTATION_CLIENT_SECRET is not set" in stderr
+    assert "commented out" in stderr
+    assert "--public-client" in stderr
+
+
+def test_a_public_pkce_client_may_proceed_without_a_secret(tmp_path, monkeypatch):
+    # The escape hatch must not be blocked by the check above; stop at the
+    # interactive prompt rather than going near the network.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("builtins.input", lambda *a: "")
+    with mock.patch.dict(os.environ, {"TRADESTATION_CLIENT_ID": "abc"}, clear=True):
+        with mock.patch("sys.argv", ["tradestation_auth.py", "--public-client"]):
+            # No ?code= in the pasted value, so it exits 1 having never
+            # reached the token call.
+            assert tradestation_auth.main() == 1

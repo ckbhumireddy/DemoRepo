@@ -219,6 +219,14 @@ class TradeStationSession:
     ) -> None:
         if not client_id:
             raise TradeStationAuthError("TRADESTATION_CLIENT_ID not set")
+        if not client_secret:
+            # Refreshing without a secret returns a bare 401 access_denied,
+            # which reads like an expired token rather than a config gap.
+            # Legitimate for a public/PKCE client, so warn rather than raise.
+            logger.warning(
+                "TRADESTATION_CLIENT_SECRET is not set — token refresh will "
+                "fail with 401 unless this app is a public (PKCE) client"
+            )
         self.client_id = client_id
         self.client_secret = client_secret
         self.token_file = token_file

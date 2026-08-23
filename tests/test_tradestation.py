@@ -168,3 +168,17 @@ def test_session_reuses_an_unexpired_access_token():
     )
     # No network call: a valid token short-circuits the refresh.
     assert session._access_token() == "still-good"
+
+
+def test_a_missing_client_secret_is_warned_about_not_swallowed(caplog):
+    # Refreshing without a secret gets a bare 401 that reads like an expired
+    # token; the warning is what points at the real cause.
+    with caplog.at_level("WARNING"):
+        TradeStationSession("id", "", token_json='{"refresh_token": "r"}')
+    assert "TRADESTATION_CLIENT_SECRET is not set" in caplog.text
+
+
+def test_a_configured_secret_warns_about_nothing(caplog):
+    with caplog.at_level("WARNING"):
+        TradeStationSession("id", "secret", token_json='{"refresh_token": "r"}')
+    assert "CLIENT_SECRET" not in caplog.text
