@@ -183,3 +183,39 @@ def test_a_public_pkce_client_may_proceed_without_a_secret(tmp_path, monkeypatch
             # No ?code= in the pasted value, so it exits 1 having never
             # reached the token call.
             assert tradestation_auth.main() == 1
+
+
+def test_the_auth_scripts_token_file_is_found_without_extra_config(tmp_path,
+                                                                   monkeypatch):
+    # The local setup story is "run tradestation_auth.py once, done" — the
+    # session must pick up the file it wrote without a TRADESTATION_TOKEN_FILE
+    # line in .env.
+    from market_insights.tradestation import build_session
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tradestation_token.json").write_text(
+        '{"refresh_token": "from-auth-script"}', encoding="utf-8"
+    )
+    env = dict(BASE_ENV, TRADESTATION_CLIENT_ID="abc",
+               TRADESTATION_CLIENT_SECRET="s3")
+    with mock.patch.dict(os.environ, env, clear=True):
+        config = MarketInsightsConfig.from_env()
+    assert config.tradestation_token_file == "tradestation_token.json"
+    session = build_session(config)
+    assert session is not None
+    assert session._token["refresh_token"] == "from-auth-script"
+
+
+def test_an_explicit_token_env_var_beats_the_default_file(tmp_path, monkeypatch):
+    from market_insights.tradestation import build_session
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tradestation_token.json").write_text(
+        '{"refresh_token": "stale-file"}', encoding="utf-8"
+    )
+    env = dict(BASE_ENV, TRADESTATION_CLIENT_ID="abc",
+               TRADESTATION_CLIENT_SECRET="s3",
+               TRADESTATION_TOKEN='{"refresh_token": "from-secret"}')
+    with mock.patch.dict(os.environ, env, clear=True):
+        session = build_session(MarketInsightsConfig.from_env())
+    assert session._token["refresh_token"] == "from-secret"

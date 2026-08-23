@@ -52,7 +52,10 @@ class MarketInsightsConfig(Config):
     tradestation_client_id: str = ""
     tradestation_client_secret: str = ""
     tradestation_token: str = ""
-    tradestation_token_file: str = ""
+    # Defaults to the file scripts/tradestation_auth.py writes, so local setup
+    # is: run the auth script once, done. TRADESTATION_TOKEN (the JSON itself,
+    # e.g. a GitHub secret) wins over the file when both are present.
+    tradestation_token_file: str = "tradestation_token.json"
     tradestation_environment: str = "live"    # "live" | "sim"
 
     @classmethod
@@ -88,7 +91,7 @@ class MarketInsightsConfig(Config):
             ).strip(),
             tradestation_token=os.environ.get("TRADESTATION_TOKEN", "").strip(),
             tradestation_token_file=os.environ.get(
-                "TRADESTATION_TOKEN_FILE", ""
+                "TRADESTATION_TOKEN_FILE", "tradestation_token.json"
             ).strip(),
             tradestation_environment=os.environ.get(
                 "TRADESTATION_ENVIRONMENT", "live"
