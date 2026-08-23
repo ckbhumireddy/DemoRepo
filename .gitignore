@@ -15,6 +15,9 @@ state/
 # Schwab OAuth token written by scripts/schwab_auth.py — never commit
 schwab_token.json
 
+# TradeStation OAuth token written by scripts/tradestation_auth.py — never commit
+tradestation_token.json
+
 # Personal holdings (portfolio_insights input) — never commit
 portfolio.json
 Portfolio_Positions*.csv
