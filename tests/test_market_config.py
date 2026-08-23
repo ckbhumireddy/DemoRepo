@@ -100,3 +100,55 @@ def test_auth_script_exits_2_without_a_client_id(tmp_path, monkeypatch):
     with mock.patch.dict(os.environ, {}, clear=True):
         with mock.patch("sys.argv", ["tradestation_auth.py"]):
             assert tradestation_auth.main() == 2
+
+
+# --------------------------------------------------------------------------- #
+# .env parsing — the shapes real files actually arrive in
+# --------------------------------------------------------------------------- #
+def _load(tmp_path, text, encoding="utf-8"):
+    path = tmp_path / ".env"
+    path.write_text(text, encoding=encoding)
+    with mock.patch.dict(os.environ, {}, clear=True):
+        assert tradestation_auth.load_env_file(str(path)) is True
+        return dict(os.environ)
+
+
+def test_env_file_survives_a_utf8_bom(tmp_path):
+    # Notepad and PowerShell redirects write a BOM; without utf-8-sig it
+    # glues to the first key and that single line silently vanishes.
+    env = _load(tmp_path, "TRADESTATION_CLIENT_ID=abc\n", encoding="utf-8-sig")
+    assert env["TRADESTATION_CLIENT_ID"] == "abc"
+
+
+def test_env_file_accepts_an_export_prefix(tmp_path):
+    env = _load(tmp_path, "export TRADESTATION_CLIENT_ID=abc\n")
+    assert env["TRADESTATION_CLIENT_ID"] == "abc"
+
+
+def test_commented_lines_stay_inert(tmp_path):
+    # .env.example ships these commented; copying it must not look like it
+    # configured something.
+    env = _load(tmp_path, "# TRADESTATION_CLIENT_ID=abc\n")
+    assert "TRADESTATION_CLIENT_ID" not in env
+
+
+def test_env_file_tolerates_spacing_and_quotes(tmp_path):
+    env = _load(
+        tmp_path,
+        'TRADESTATION_CLIENT_ID = "abc"  \nTRADESTATION_CLIENT_SECRET=\'s3\'\n',
+    )
+    assert env["TRADESTATION_CLIENT_ID"] == "abc"
+    assert env["TRADESTATION_CLIENT_SECRET"] == "s3"
+
+
+def test_a_loaded_env_file_explains_a_missing_client_id(tmp_path, monkeypatch,
+                                                        capsys):
+    # The failure the user actually hits: .env found, variable commented out.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("# TRADESTATION_CLIENT_ID=abc\n", encoding="utf-8")
+    with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch("sys.argv", ["tradestation_auth.py"]):
+            assert tradestation_auth.main() == 2
+    stderr = capsys.readouterr().err
+    assert "was loaded but TRADESTATION_CLIENT_ID was not set" in stderr
+    assert "commented out" in stderr

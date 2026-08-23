@@ -43,15 +43,22 @@ SCOPES = "openid offline_access MarketData"
 
 
 def load_env_file(path: str) -> bool:
-    """Load KEY=VALUE lines into the environment (existing values win)."""
+    """Load KEY=VALUE lines into the environment (existing values win).
+
+    Read as utf-8-sig: Notepad and PowerShell redirects write a UTF-8 BOM,
+    which would otherwise glue itself to the first key and make that one
+    line vanish while every other line worked.
+    """
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8-sig") as fh:
             for line in fh:
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
                 key, _, value = line.partition("=")
                 key = key.strip()
+                if key.startswith("export "):     # a shell habit, not a typo
+                    key = key[len("export "):].strip()
                 value = value.strip().strip('"').strip("'")
                 if key and key not in os.environ:
                     os.environ[key] = value
@@ -99,6 +106,17 @@ def main() -> int:
 
     if not args.client_id:
         print("Set TRADESTATION_CLIENT_ID (or use --client-id).", file=sys.stderr)
+        if env_file:
+            print(
+                f"\n{env_file} was loaded but TRADESTATION_CLIENT_ID was not "
+                "set by it. Check that the line:\n"
+                "  - is not commented out (a leading '#' is ignored — the "
+                "lines in .env.example are commented by default)\n"
+                "  - reads TRADESTATION_CLIENT_ID=your-id, with no quotes "
+                "needed\n"
+                "  - is spelled exactly that way",
+                file=sys.stderr,
+            )
         return 2
 
     print("\n1. Open this URL, log in to TradeStation, and approve access:\n")
