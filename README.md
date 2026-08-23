@@ -347,6 +347,21 @@ Unlike Schwab's 7-day refresh token, a TradeStation refresh token does not
 expire — this is one-time setup, not a weekly chore. Set
 `TRADESTATION_ENVIRONMENT=sim` to point at the simulation host.
 
+Then verify the credentials and that the live feed matches the parsers:
+
+```powershell
+python -m market_insights --check-feed          # defaults to MSFT
+python -m market_insights --check-feed NVDA --env-file .env
+```
+
+It runs the two calls the scan depends on and prints what came back —
+quote fields, bar count, date range, and whether the session is still open.
+Exit code 0 means the feed matches what the scanner expects; 1 means it
+answered but something was off (empty fields, rows failing to parse); 2
+means TradeStation is not configured. Worth running once after setup, since
+a vendor-side payload change would otherwise surface as a quiet, empty
+email rather than an error.
+
 ## Martingale Paper Trader (martingale_trader)
 
 A deliberate demonstration of why martingale position sizing fails,
