@@ -290,6 +290,78 @@ cron is fallback only.
 python -m iv_scanner --dry-run --universe portfolio   # fast local preview
 ```
 
+## Market Insights — unusual volume (market_insights)
+
+Daily email after the close: the S&P 500 names trading on genuinely unusual
+volume, each read against its own short- and long-term trend. Volume alone
+is noise, so every row carries an interpretation rather than just a
+multiple — *Trend continuation*, *Distribution into strength*,
+*Counter-trend rally*, *Downtrend acceleration*, *Breakout attempt*,
+*Volume without direction*.
+
+How "unusual" is measured:
+
+- **RVOL** — the session's volume against the **median** of the last 20
+  sessions. The median, not the mean, so one earnings-day spike inside the
+  lookback cannot hide the next one.
+- **Log z-score** — how far the day sits above the stock's *own* recent
+  distribution. 2x is extraordinary for a mega-cap and routine for a small
+  cap; the z-score is what makes those comparable.
+- Liquidity floors ($5 price, $25M projected dollar volume) keep thin tape
+  out of the email, where an 8x day on 40k shares would otherwise dominate
+  the ranking.
+
+Trend is scored on two horizons, each from three independent components so
+one noisy input cannot flip a label: **short term** (5- and 21-session
+returns, price vs the 20-day) and **long term** (6-month return, price vs
+the 200-day, 50-day vs 200-day). The interesting names are usually the ones
+where the horizons disagree — a heavy down day inside an intact uptrend
+reads very differently from the same day in a downtrend.
+
+The full S&P 500 sweep needs TradeStation market data and runs in two
+stages: one `/quotes` call per 100 symbols screens the whole index (~5
+requests), then only the hot names plus your holdings get a daily-history
+request. Without TradeStation the scan degrades to your portfolio and
+`EXTRA_TICKERS` watchlist via Yahoo.
+
+Runs after the close by default, so the numbers are final. Dispatching it
+mid-session works too: the partial day is projected from a typical
+(U-shaped) intraday volume curve rather than a linear clock, and the email
+says which basis it used.
+
+```powershell
+python -m market_insights --dry-run --universe portfolio   # fast local preview
+python -m market_insights --dry-run --min-rvol 1.5 --top 40
+```
+
+### TradeStation market data (optional)
+
+Register an app at [developer.tradestation.com](https://developer.tradestation.com)
+with the `MarketData` and `offline_access` scopes, then run once:
+
+```powershell
+python scripts/tradestation_auth.py --set-secret
+```
+
+Unlike Schwab's 7-day refresh token, a TradeStation refresh token does not
+expire — this is one-time setup, not a weekly chore. Set
+`TRADESTATION_ENVIRONMENT=sim` to point at the simulation host.
+
+Then verify the credentials and that the live feed matches the parsers:
+
+```powershell
+python -m market_insights --check-feed          # defaults to MSFT
+python -m market_insights --check-feed NVDA --env-file .env
+```
+
+It runs the two calls the scan depends on and prints what came back —
+quote fields, bar count, date range, and whether the session is still open.
+Exit code 0 means the feed matches what the scanner expects; 1 means it
+answered but something was off (empty fields, rows failing to parse); 2
+means TradeStation is not configured. Worth running once after setup, since
+a vendor-side payload change would otherwise surface as a quiet, empty
+email rather than an error.
+
 ## Martingale Paper Trader (martingale_trader)
 
 A deliberate demonstration of why martingale position sizing fails,
