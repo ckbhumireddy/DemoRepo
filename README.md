@@ -362,6 +362,55 @@ means TradeStation is not configured. Worth running once after setup, since
 a vendor-side payload change would otherwise surface as a quiet, empty
 email rather than an error.
 
+## Swing Trader (swing_trader)
+
+Pluggable swing-trading strategies with one hard rule: **no strategy emails
+live signals until a backtest has passed.** The same `evaluate()` drives the
+backtest replay and the live scan, so what was tested is exactly what runs.
+Approval lives in a registry (`state/swing_registry.json`), is earned only by
+a passing backtest (profit factor, trade count, max drawdown thresholds), can
+be revoked by a failing one, and expires after 90 days so it must be
+re-earned against fresh tape.
+
+**Strategy 1 — `distressed-sr`.** Large caps (the S&P 500 stands in for
+"high market cap") at least 30% below their 52-week high *and* below their
+200-day average, traded between their own local support and resistance.
+Levels are mechanical: swing pivots (fractal highs/lows) clustered into
+zones, strength measured in touches. A signal is a complete plan — entry
+near a 2x-tested support, stop below it, the next tested resistance as
+target — and is refused when reward/risk < 2.
+
+The backtest is walk-forward with no lookahead (the strategy only ever sees
+`bars[:t+1]`), and fills are pessimistic: stop checked before target on
+ambiguous bars, gaps fill at the open, stale trades cut by a time stop.
+
+```powershell
+python -m swing_trader backtest        # earn (or lose) approval; records the verdict
+python -m swing_trader status          # every strategy's standing
+python -m swing_trader scan --dry-run  # preview today's setups
+python -m swing_trader scan            # email setups (approved strategies only)
+python -m swing_trader backtest --tickers INTC,BA,NKE   # ad-hoc via fallback feed
+```
+
+### Tuning: the researcher loop
+
+`python -m swing_trader research` grid-searches a strategy's parameters the
+honest way: the grid is ranked on the **train** segment (first 70% of
+history), only the top finalists are scored on the held-out **validation**
+segment, and the winner is promoted into `swing_trader/champions.json` only
+if its *validation* result also clears the same approval thresholds a live
+strategy must pass. A champion that falls apart out-of-sample produces a
+report, not a promotion. Promoted parameters apply everywhere
+(scan/backtest/research) with explicit `SWING_*` env overrides still
+winning; disable with `SWING_USE_CHAMPION=false`. Same contract as
+`martingale_research`'s stress-gated promotion into `champions.json`.
+
+Candidate discovery is cheap: the distress screen reads price and 52-week
+high straight from TradeStation's quote payload, so the whole S&P 500 costs
+~5 requests and only distressed names get history requests. Without
+TradeStation the service degrades to the `EXTRA_TICKERS` watchlist via
+Yahoo.
+
 ## Martingale Paper Trader (martingale_trader)
 
 A deliberate demonstration of why martingale position sizing fails,

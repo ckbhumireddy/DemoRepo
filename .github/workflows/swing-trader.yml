@@ -1,0 +1,85 @@
+name: Swing trader
+
+# Daily post-close scan. The email only goes out for strategies whose
+# recorded backtest passed (and hasn't expired) — an unapproved strategy's
+# signals are printed into the run log instead. Backtests and the research
+# loop are run manually (locally or via workflow_dispatch's mode input);
+# their verdicts ride the shared state/ cache.
+#
+# NOTE: cron is UTC — when DST ends (November), shift it +1h.
+
+on:
+  schedule:
+    - cron: "55 20 * * 1-5"   # fallback; ~16:55 ET after the close
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to run"
+        type: choice
+        options: [scan, backtest, status]
+        default: scan
+      dry_run:
+        description: "Preview only (never email or write state)"
+        type: boolean
+        default: false
+
+jobs:
+  swing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Rolling state cache shared with the other workflows (carries the
+      # backtest registry between runs).
+      - name: Persist state
+        uses: actions/cache@v4
+        with:
+          path: state
+          key: earnings-state-${{ github.run_id }}
+          restore-keys: |
+            earnings-state-
+
+      - name: Run
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+          EXTRA_TICKERS: ${{ vars.EXTRA_TICKERS }}
+          SWING_STRATEGY: ${{ vars.SWING_STRATEGY }}
+          SWING_TOP_N: ${{ vars.SWING_TOP_N }}
+          # TradeStation market data — required for S&P 500 candidate
+          # discovery; without it the scan degrades to EXTRA_TICKERS.
+          TRADESTATION_CLIENT_ID: ${{ secrets.TRADESTATION_CLIENT_ID }}
+          TRADESTATION_CLIENT_SECRET: ${{ secrets.TRADESTATION_CLIENT_SECRET }}
+          TRADESTATION_TOKEN: ${{ secrets.TRADESTATION_TOKEN }}
+        run: |
+          python -m swing_trader ${{ inputs.mode || 'scan' }} \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python scripts/send_alert.py
