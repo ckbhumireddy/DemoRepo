@@ -129,7 +129,9 @@ def run_research(
     max_hold: int = 20,
 ) -> ResearchReport:
     """Grid-search on train, judge finalists on validation, crown honestly."""
-    grid = grid or DEFAULT_GRID
+    if grid is None:
+        probe = get_strategy(strategy_name)
+        grid = getattr(probe, "research_grid", lambda: None)() or DEFAULT_GRID
     combos = [
         dict(zip(grid.keys(), values))
         for values in itertools.product(*grid.values())

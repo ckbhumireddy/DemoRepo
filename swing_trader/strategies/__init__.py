@@ -12,6 +12,8 @@ from typing import Dict, List
 
 from .base import Strategy
 from .distressed_sr import DistressedSupportResistance
+from .pullback_ma import UptrendPullback
+from .rsi_reversion import RsiReversion
 
 _REGISTRY: Dict[str, Strategy] = {}
 
@@ -37,3 +39,5 @@ def strategy_names() -> List[str]:
 
 
 register(DistressedSupportResistance())
+register(UptrendPullback())
+register(RsiReversion())

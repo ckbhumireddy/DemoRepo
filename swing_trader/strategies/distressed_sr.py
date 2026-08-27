@@ -60,6 +60,14 @@ class DistressedSupportResistance:
         # A 200-day average plus enough room for pivots to form.
         return 220
 
+    def research_grid(self) -> dict:
+        return {
+            "entry_band": [0.015, 0.02, 0.03],
+            "stop_buffer": [0.02, 0.03, 0.05],
+            "min_rr": [1.5, 2.0, 2.5],
+            "min_touches": [2, 3],
+        }
+
     # ------------------------------------------------------------------ #
     # Screen pieces, exposed for tests and for the scan's reporting.
     # ------------------------------------------------------------------ #

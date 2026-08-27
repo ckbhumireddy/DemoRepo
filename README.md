@@ -384,13 +384,25 @@ The backtest is walk-forward with no lookahead (the strategy only ever sees
 `bars[:t+1]`), and fills are pessimistic: stop checked before target on
 ambiguous bars, gaps fill at the open, stale trades cut by a time stop.
 
+Also registered: **`pullback-ma`** (strategy 2 — healthy uptrends bought on
+pullbacks into the 50-day band, recent swing high as target) and
+**`rsi-reversion`** (strategy 3 — short-RSI oversold snapbacks above the
+200-day; wins often and small, so its R/R floor is lower and the gate
+decides whether the win rate actually carries it).
+
 ```powershell
 python -m swing_trader backtest        # earn (or lose) approval; records the verdict
 python -m swing_trader status          # every strategy's standing
 python -m swing_trader scan --dry-run  # preview today's setups
 python -m swing_trader scan            # email setups (approved strategies only)
 python -m swing_trader backtest --tickers INTC,BA,NKE   # ad-hoc via fallback feed
+python -m swing_trader compare --tickers GOOG           # race ALL strategies on one tape
 ```
+
+`compare` backtests every registered strategy on identical history with
+identical fill rules, next to a buy-and-hold benchmark, and shows what the
+approval gate would say about each — the way to ask "which strategy would
+work on this ticker?" before committing one to practice.
 
 ### Tuning: the researcher loop
 

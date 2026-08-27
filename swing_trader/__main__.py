@@ -21,6 +21,9 @@ The lifecycle a strategy walks, in commands:
     # Tune the strategy: grid-search on the train segment, judge finalists
     # out-of-sample, and promote a validation-passing champion:
     python -m swing_trader research
+
+    # Race EVERY strategy on the same real tape, vs buy-and-hold:
+    python -m swing_trader compare --tickers GOOG
 """
 
 from __future__ import annotations
@@ -69,6 +72,14 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="history share used for tuning (rest validates)")
     rs.add_argument("--dry-run", action="store_true",
                     help="report the champion but do not promote it")
+
+    cp = sub.add_parser("compare", help="backtest every strategy on the same "
+                                        "history, vs buy-and-hold")
+    cp.add_argument("--tickers", default=None,
+                    help="comma-separated tickers (fallback feed); omit to "
+                         "use candidate discovery")
+    cp.add_argument("--strategies", default=None,
+                    help="comma-separated subset (default: all registered)")
 
     sub.add_parser("status", help="show every strategy's backtest standing")
     return p
@@ -174,6 +185,34 @@ def _cmd_research(config: SwingConfig, args) -> int:
     return 0 if report.promoted else 1
 
 
+def _cmd_compare(config: SwingConfig, args) -> int:
+    from .compare import compare_strategies, format_comparison
+    from .service import _yahoo_history, gather_history
+
+    if args.tickers:
+        tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+        history = _yahoo_history(config, tickers, None)
+        missing = sorted(set(tickers) - set(history))
+        if missing:
+            print(f"No history for: {', '.join(missing)}", file=sys.stderr)
+    else:
+        history, note = gather_history(config, config.build_strategy())
+        if note:
+            print(note)
+    if not history:
+        print("No history to compare against.", file=sys.stderr)
+        return 1
+    names = None
+    if args.strategies:
+        names = [n.strip().lower() for n in args.strategies.split(",") if n.strip()]
+    comparison = compare_strategies(
+        history, config.thresholds(), names=names,
+        max_hold=config.swing_max_hold,
+    )
+    print(format_comparison(comparison))
+    return 0
+
+
 def _cmd_scan(config: SwingConfig) -> int:
     from .service import run_scan
 
@@ -204,6 +243,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return _cmd_backtest(config, args)
         if args.command == "research":
             return _cmd_research(config, args)
+        if args.command == "compare":
+            return _cmd_compare(config, args)
         return _cmd_scan(config)
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
