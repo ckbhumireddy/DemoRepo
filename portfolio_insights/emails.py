@@ -105,34 +105,67 @@ _TH = (
 _TD = "padding:3px 8px;border-bottom:1px solid #eee;text-align:right"
 
 
+# --------------------------------------------------------------------------- #
+# The position table: Ticker | Day | Day P&L | Value | Weight.
+#
+# One set of helpers renders it for BOTH emails. The midday alert and the EOD
+# summary showing the same five columns in the same order is the point — a
+# reader should not have to re-learn the layout at 4pm — and sharing the
+# renderer is what stops them drifting apart the next time one is edited.
+# --------------------------------------------------------------------------- #
+def _weight_cell(v: Optional[PositionView]) -> str:
+    return f"{v.weight_pct:.1f}%" if v and v.weight_pct is not None else "—"
+
+
+def _day_pnl_cell(v: Optional[PositionView]) -> str:
+    return f"{v.day_pnl:+,.0f}" if v and v.day_pnl is not None else "—"
+
+
+def _position_text_header() -> str:
+    return f"  {'':<7}{'DAY':>8}  {'DAY P&L':>9}  {'VALUE':>10}  {'WT':>6}"
+
+
+def _position_text_row(ticker: str, v: Optional[PositionView]) -> str:
+    return (
+        f"  {ticker:<7}{_pct(v.day_change_pct) if v else '—':>8}  "
+        f"{_day_pnl_cell(v):>9}  {_money0(v.market_value) if v else '—':>10}  "
+        f"{_weight_cell(v):>6}"
+    )
+
+
+def _position_html_header() -> str:
+    return (
+        "<tr>"
+        f"<th style='{_TH};text-align:left'>Ticker</th>"
+        f"<th style='{_TH}'>Day</th>"
+        f"<th style='{_TH}'>Day P&L</th>"
+        f"<th style='{_TH}'>Value</th>"
+        f"<th style='{_TH}'>Weight</th>"
+        "</tr>"
+    )
+
+
+def _position_html_row(ticker: str, v: Optional[PositionView]) -> str:
+    # Day percent and day dollars share the move's colour: they are two
+    # readings of one fact, and colouring them apart invites misreading.
+    color = _move_color(v.day_change_pct if v else None)
+    return (
+        "<tr>"
+        f"<td style='{_TD};text-align:left'><b>{html.escape(ticker)}</b></td>"
+        f"<td style='{_TD};color:{color};font-weight:bold'>"
+        f"{_pct(v.day_change_pct) if v else '—'}</td>"
+        f"<td style='{_TD};color:{color}'>{_day_pnl_cell(v)}</td>"
+        f"<td style='{_TD}'>{_money0(v.market_value) if v else '—'}</td>"
+        f"<td style='{_TD}'>{_weight_cell(v)}</td>"
+        "</tr>"
+    )
+
+
 def _positions_table(views: List[PositionView]) -> str:
     """A real table: aligned columns beat 77 crowded prose rows."""
     major, dust = _split_dust(views)
-    head = (
-        "<tr>"
-        f"<th style='{_TH};text-align:left'>Ticker</th>"
-        f"<th style='{_TH}'>Value</th>"
-        f"<th style='{_TH}'>Weight</th>"
-        f"<th style='{_TH}'>Day</th>"
-        f"<th style='{_TH}'>vs SPY</th>"
-        f"<th style='{_TH}'>Total P&L</th>"
-        "</tr>"
-    )
-    rows = []
-    for v in major:
-        w = f"{v.weight_pct:.1f}%" if v.weight_pct is not None else "—"
-        rows.append(
-            "<tr>"
-            f"<td style='{_TD};text-align:left'><b>{html.escape(v.ticker)}</b></td>"
-            f"<td style='{_TD}'>{_money0(v.market_value)}</td>"
-            f"<td style='{_TD}'>{w}</td>"
-            f"<td style='{_TD};color:{_move_color(v.day_change_pct)}'>"
-            f"{_pct(v.day_change_pct)}</td>"
-            f"<td style='{_TD}'>{_pct(v.vs_spy_pct)}</td>"
-            f"<td style='{_TD};color:{_move_color(v.total_pnl_pct)}'>"
-            f"{_pct(v.total_pnl_pct)}</td>"
-            "</tr>"
-        )
+    head = _position_html_header()
+    rows = [_position_html_row(v.ticker, v) for v in major]
     dust_line = _dust_summary(dust)
     dust_html = (
         f"<div style='margin-top:6px;color:#777;font-size:12px'>"
@@ -242,14 +275,8 @@ def render_eod_email(
         )
     major, dust = _split_dust(views)
     lines += ["", "Positions (by value):"]
-    lines.append(f"  {'':<7}{'VALUE':>10}  {'WT':>6}  {'DAY':>8}  {'TOTAL':>8}")
-    for v in major:
-        w = f"{v.weight_pct:.1f}%" if v.weight_pct is not None else "—"
-        lines.append(
-            f"  {v.ticker:<7}{_money0(v.market_value):>10}  {w:>6}  "
-            f"{_pct(v.day_change_pct):>8}  "
-            f"{_pct(v.total_pnl_pct) if v.total_pnl_pct is not None else '—':>8}"
-        )
+    lines.append(_position_text_header())
+    lines += [_position_text_row(v.ticker, v) for v in major]
     dust_line = _dust_summary(dust)
     if dust_line:
         lines.append(f"  {dust_line}")
@@ -471,22 +498,11 @@ def render_midday_email(
     # ---- text: aligned columns ----
     lines = [f"Portfolio midday alert ({_weekday(today)})", ""]
     if position_triggers:
-        lines.append(
-            f"  {'':<7}{'DAY':>8}  {'DAY P&L':>9}  {'VALUE':>10}  {'WT':>6}"
-        )
-        for t in position_triggers:
-            v = by_ticker.get(t.ticker)
-            day = _pct(v.day_change_pct) if v else "—"
-            pnl = f"{v.day_pnl:+,.0f}" if v and v.day_pnl is not None else "—"
-            value = _money0(v.market_value) if v else "—"
-            w = (
-                f"{v.weight_pct:.1f}%"
-                if v and v.weight_pct is not None
-                else "—"
-            )
-            lines.append(
-                f"  {t.ticker:<7}{day:>8}  {pnl:>9}  {value:>10}  {w:>6}"
-            )
+        lines.append(_position_text_header())
+        lines += [
+            _position_text_row(t.ticker, by_ticker.get(t.ticker))
+            for t in position_triggers
+        ]
         lines.append("")
     if option_trigs:
         lines.append("Option triggers (day P&L):")
@@ -503,35 +519,11 @@ def render_midday_email(
     # ---- html: real table ----
     table_html = ""
     if position_triggers:
-        head = (
-            "<tr>"
-            f"<th style='{_TH};text-align:left'>Ticker</th>"
-            f"<th style='{_TH}'>Day</th>"
-            f"<th style='{_TH}'>Day P&L</th>"
-            f"<th style='{_TH}'>Value</th>"
-            f"<th style='{_TH}'>Weight</th>"
-            "</tr>"
-        )
-        rows = []
-        for t in position_triggers:
-            v = by_ticker.get(t.ticker)
-            color = _move_color(v.day_change_pct if v else None)
-            rows.append(
-                "<tr>"
-                f"<td style='{_TD};text-align:left'><b>{html.escape(t.ticker)}</b></td>"
-                f"<td style='{_TD};color:{color};font-weight:bold'>"
-                f"{_pct(v.day_change_pct) if v else '—'}</td>"
-                f"<td style='{_TD};color:{color}'>"
-                f"{f'{v.day_pnl:+,.0f}' if v and v.day_pnl is not None else '—'}</td>"
-                f"<td style='{_TD}'>{_money0(v.market_value) if v else '—'}</td>"
-                f"<td style='{_TD}'>"
-                + (
-                    f"{v.weight_pct:.1f}%"
-                    if v and v.weight_pct is not None
-                    else "—"
-                )
-                + "</td></tr>"
-            )
+        head = _position_html_header()
+        rows = [
+            _position_html_row(t.ticker, by_ticker.get(t.ticker))
+            for t in position_triggers
+        ]
         table_html = (
             "<div style='overflow-x:auto'>"
             "<table style='border-collapse:collapse;width:100%;font-size:13px'>"

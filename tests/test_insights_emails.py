@@ -96,3 +96,53 @@ def test_midday_email_contents():
     assert "PORTFOLIO TRIGGER:" in text
     assert "<table" in html and "Weight" in html
     assert DISCLAIMER in text and DISCLAIMER in html
+
+
+# --------------------------------------------------------------------------- #
+# The position table format (per user request): Ticker | Day | Day P&L |
+# Value | Weight, identical in both emails.
+# --------------------------------------------------------------------------- #
+def _header_cells(html_body):
+    import re
+
+    return re.findall(r"<th[^>]*>(.*?)</th>", html_body)
+
+
+def test_eod_positions_table_is_day_first():
+    views, portfolio = _views()
+    _, text, html_body = render_eod_email(views, portfolio, [], TODAY)
+
+    # Column ORDER, not merely presence — the point of the request.
+    assert _header_cells(html_body)[:5] == [
+        "Ticker", "Day", "Day P&L", "Value", "Weight",
+    ]
+    flat = " ".join(text.split())
+    assert "DAY DAY P&L VALUE WT" in flat
+    # Day percent, day dollars, value, weight — in that order, one row.
+    assert "TGT +4.00% +600 $15,600 100.0%" in flat
+
+
+def test_eod_positions_table_drops_the_columns_the_format_omits():
+    views, portfolio = _views()
+    _, _, html_body = render_eod_email(views, portfolio, [], TODAY)
+    headers = _header_cells(html_body)
+    # "vs SPY" and per-position "Total P&L" are not in the requested layout;
+    # the portfolio-level total still leads the email.
+    assert "vs SPY" not in headers
+    assert "Total P&L" not in headers
+
+
+def test_both_emails_share_one_position_layout():
+    # The anti-drift guarantee: midday and EOD render from the same helpers,
+    # so a reader never has to re-learn the columns between 12:30 and 4pm.
+    views, portfolio = _views()
+    _, eod_text, eod_html = render_eod_email(views, portfolio, [], TODAY)
+    triggers = [AlertTrigger("position", "TGT", "TGT +6.2%")]
+    _, mid_text, mid_html = render_midday_email(
+        triggers, views, portfolio, TODAY
+    )
+
+    assert _header_cells(eod_html)[:5] == _header_cells(mid_html)[:5]
+    row = "TGT +4.00% +600 $15,600 100.0%"
+    assert row in " ".join(eod_text.split())
+    assert row in " ".join(mid_text.split())
