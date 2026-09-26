@@ -71,6 +71,7 @@ def _parser() -> argparse.ArgumentParser:
     s = sub.add_parser("serve", help="run the local web page")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--open", action="store_true", help="open the page in your browser")
 
     s = sub.add_parser("demo", help="generate synthetic data, build it, and serve")
     s.add_argument("--n", type=int, default=3000, help="number of synthetic parcels")
@@ -123,7 +124,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if args.cmd == "serve":
         from .web import serve
-        serve(args.db, args.host, args.port)
+        serve(args.db, args.host, args.port, open_browser=args.open)
         return 0
 
     conn = db.connect(args.db)
@@ -159,7 +160,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         conn.close()
         if not args.no_serve:
             from .web import serve
-            serve(args.db, "127.0.0.1", args.port)
+            serve(args.db, "127.0.0.1", args.port, open_browser=True)
     return 0
 
 

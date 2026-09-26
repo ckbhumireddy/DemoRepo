@@ -26,9 +26,12 @@ STATIC = pathlib.Path(__file__).resolve().parent / "static"
 
 
 def make_handler(db_path: str):
+    # A proper file: URI so Windows paths (drive letters, spaces, "#") open read-only.
+    db_uri = pathlib.Path(db_path).resolve().as_uri() + "?mode=ro"
+
     class Handler(BaseHTTPRequestHandler):
         def _conn(self):
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn = sqlite3.connect(db_uri, uri=True)
             conn.row_factory = sqlite3.Row
             return conn
 
@@ -82,11 +85,15 @@ def make_handler(db_path: str):
     return Handler
 
 
-def serve(db_path: str, host: str = "127.0.0.1", port: int = 8765):
+def serve(db_path: str, host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False):
     if not pathlib.Path(db_path).exists():
         raise SystemExit(f"database not found: {db_path} (run ingest + build first, or --demo)")
     server = ThreadingHTTPServer((host, port), make_handler(str(pathlib.Path(db_path).resolve())))
-    print(f"Browse parcels at http://{host}:{port}/  (Ctrl+C to stop)")
+    url = f"http://{host}:{port}/"
+    print(f"Browse parcels at {url}  (keep this window open; Ctrl+C to stop)")
+    if open_browser:
+        import webbrowser
+        webbrowser.open(url)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
