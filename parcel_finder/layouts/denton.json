@@ -528,5 +528,30 @@
   "078": "Mobile Home Escrow",
   "089": "Tax Sale Cost",
   "098": "Motor Vehicle Tax"
+ },
+ "cad_account_pattern": "^(?P<id>\\d+)(?P<cad>[A-Z]{3})$",
+ "appraisal_districts": {
+  "DEN": {
+   "name": "Denton CAD",
+   "url": "https://www.dentoncad.com/property-detail/{id}"
+  },
+  "TAR": {
+   "name": "Tarrant CAD"
+  },
+  "WIS": {
+   "name": "Wise CAD"
+  },
+  "COK": {
+   "name": "Cooke CAD"
+  },
+  "COL": {
+   "name": "Collin CAD"
+  },
+  "GRA": {
+   "name": "Grayson CAD"
+  },
+  "DAL": {
+   "name": "Dallas CAD"
+  }
  }
 }

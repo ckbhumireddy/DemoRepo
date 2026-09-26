@@ -81,6 +81,11 @@ data (see `_inferred` in the layout):
   have $0 improvements on 90–100% of their accounts.
 * **City**: the roll has no situs city, so it comes from the account's city tax
   unit (`C01`–`C48` in the TU file). No city unit means **UNINCORPORATED**.
+* **Denton CAD link**: the tax-office account is the CAD property ID plus a
+  district suffix, so `963342DEN` becomes
+  `https://www.dentoncad.com/property-detail/963342`. Parcels that straddle
+  the county line carry another district's suffix (`TAR` Tarrant, `WIS` Wise,
+  `COK` Cooke, ...). The page shows that district's name instead of a link.
 * **Deed date** is populated on about a quarter of accounts, so "owned 10+ years" only
   fires where it is known.
 

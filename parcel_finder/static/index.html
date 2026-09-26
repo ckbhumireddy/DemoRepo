@@ -40,6 +40,8 @@ th.sorted { color: var(--accent); }
 th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--accent-soft); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
 .score { display: inline-block; min-width: 28px; text-align: center; border-radius: 10px; padding: 1px 6px; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
 .tags span { display: inline-block; font-size: 11px; padding: 0 5px; margin: 1px 2px 1px 0; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
 .tags span.hot { color: var(--bad); border-color: var(--bad); }
@@ -145,6 +147,10 @@ function params() {
   p.set("sort", state.sort); p.set("dir", state.dir);
   return p;
 }
+function cadLink(r) {
+  if (!r.cad_url) return `${esc(r.account)}${r.cad ? `<div class="small">${esc(r.cad)}</div>` : ""}`;
+  return `<a href="${esc(r.cad_url)}" target="_blank" rel="noopener" title="Open on ${esc(r.cad)}">${esc(r.account)} ↗</a>`;
+}
 function tags(r) {
   const t = [];
   if (r.is_delinquent) t.push(`<span class="hot">delinq ${r.years_delinquent}y</span>`);
@@ -172,7 +178,7 @@ async function load() {
   $("prev").disabled = state.offset === 0; $("next").disabled = state.offset + PAGE >= d.total;
   document.querySelectorAll("th").forEach(th => th.classList.toggle("sorted", th.dataset.k === state.sort));
   $("rows").innerHTML = d.rows.map(r => `<tr data-a="${esc(r.account)}">
-    <td class="num"><span class="score">${r.score}</span></td><td>${esc(r.account)}</td>
+    <td class="num"><span class="score">${r.score}</span></td><td>${cadLink(r)}</td>
     <td>${esc(r.owner_name)}${r.owner_name2 ? `<div class="small">${esc(r.owner_name2)}</div>` : ""}</td>
     <td>${esc(r.situs_address)}<div class="small">${esc(r.situs_city)}</div></td>
     <td>${esc(r.mail_state)}</td><td>${esc(r.state_code)}</td>
@@ -186,7 +192,8 @@ async function showDetail(acct) {
   const p = d.parcel; if (!p) return;
   const field = (l, v) => v == null || v === "" ? "" : `<dt>${l}</dt><dd>${v}</dd>`;
   $("detail").innerHTML = `<button id="close" style="float:right">Close</button>
-    <h2 style="margin:0 0 4px">${esc(p.owner_name)}</h2><div class="small">Account ${esc(p.account)}${p.cad_id ? " · CAD " + esc(p.cad_id) : ""}</div>
+    <h2 style="margin:0 0 4px">${esc(p.owner_name)}</h2><div class="small">Account ${esc(p.account)}${p.cad_id ? " · Geo ID " + esc(p.cad_id) : ""}
+      · ${p.cad_url ? `<a href="${esc(p.cad_url)}" target="_blank" rel="noopener">View on ${esc(p.cad)} ↗</a>` : esc(p.cad || "")}</div>
     <p><span class="score">${p.score}</span> <span class="small">${p.score_pct} percentile · ${esc(p.reasons)}</span></p>
     <dl>${field("Owner 2", esc(p.owner_name2))}
       ${field("Mailing", [p.mail_addr1, p.mail_addr2, [p.mail_city, p.mail_state, p.mail_zip].filter(Boolean).join(" ")].filter(Boolean).map(esc).join("<br>"))}
@@ -245,7 +252,7 @@ $("head").onclick = e => { const k = e.target.dataset.k; if (!k || k === "tags")
   const numeric = (COLS.find(c => c[0] === k) || [])[2];
   state.dir = state.sort === k ? (state.dir === "desc" ? "asc" : "desc") : (numeric ? "desc" : "asc");
   state.sort = k; state.offset = 0; load(); };
-$("rows").onclick = e => { const tr = e.target.closest("tr[data-a]"); if (tr) showDetail(tr.dataset.a); };
+$("rows").onclick = e => { if (e.target.closest("a")) return; const tr = e.target.closest("tr[data-a]"); if (tr) showDetail(tr.dataset.a); };
 init();
 </script>
 </body>

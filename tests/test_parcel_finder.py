@@ -237,3 +237,10 @@ def test_mailable_filter_drops_withheld_owners(built):
     rows = queries.search(conn, {"mailable": "1", "q": acct}, limit=10)["rows"]
     conn.rollback()
     assert rows == []
+
+
+def test_cad_link_from_account_suffix(layout):
+    assert db.cad_link("963342DEN", layout) == ("Denton CAD", "https://www.dentoncad.com/property-detail/963342")
+    assert db.cad_link("771087WIS", layout) == ("Wise CAD", None)
+    assert db.cad_link("800310200A03", layout) == (None, None)
+    assert db.cad_link(None, layout) == (None, None)

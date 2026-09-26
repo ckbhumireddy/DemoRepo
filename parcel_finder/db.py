@@ -32,7 +32,7 @@ BATCH = 5000
 PARCEL_COLUMNS = [
     "account", "cad_id", "owner_name", "owner_name2",
     "mail_addr1", "mail_addr2", "mail_city", "mail_state", "mail_zip",
-    "situs_address", "situs_city", "legal_desc", "state_code", "roll_code", "roll",
+    "situs_address", "situs_city", "legal_desc", "state_code", "roll_code", "roll", "cad", "cad_url",
     "acreage", "land_value", "impr_value", "market_value", "exemptions", "deed_date", "year_built",
     "years_delinquent", "first_delinquent_year", "last_delinquent_year",
     "delinquent_due", "total_due", "in_suit", "in_judgment", "in_bankruptcy", "in_deferral",
@@ -201,6 +201,22 @@ def _account_cities(conn, layout: Layout) -> Dict[str, str]:
     return out
 
 
+def cad_link(account: Optional[str], layout: Layout) -> Tuple[Optional[str], Optional[str]]:
+    """(appraisal district name, its property page URL) for a tax-office account.
+
+    Denton's account is the CAD property ID plus a district suffix
+    (963342DEN is Denton CAD property 963342); parcels straddling the county
+    line carry another district's suffix (TAR, WIS, ...).
+    """
+    pattern = layout.extras.get("cad_account_pattern")
+    m = re.match(pattern, account or "") if pattern else None
+    if not m:
+        return None, None
+    cad = (layout.extras.get("appraisal_districts") or {}).get(m.group("cad"), {})
+    url = cad.get("url")
+    return cad.get("name", m.group("cad")), url.format(id=m.group("id")) if url else None
+
+
 def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] = None,
           weights: Weights = Weights(), long_held_years: int = 10) -> int:
     as_of = as_of or dt.date.today()
@@ -240,6 +256,7 @@ def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] 
         p["situs_address"] = " ".join(x for x in (num, m.get("situs_street")) if x) or m.get("situs_address")
         p["situs_city"] = m.get("situs_city") or cities.get(p["account"]) or ("UNINCORPORATED" if cities else None)
         p["roll"] = roll_names.get(p["roll_code"] or "", p["roll_code"])
+        p["cad"], p["cad_url"] = cad_link(p["account"], layout)
         p["is_real_property"] = int(not real_rolls or p["roll_code"] in real_rolls)
         # Guide: a deferral start with no end date means the account is in deferral.
         p["in_deferral"] = int(bool(m.get("deferral_start")) and not m.get("deferral_end"))
