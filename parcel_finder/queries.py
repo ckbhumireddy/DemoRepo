@@ -14,8 +14,12 @@ SORTABLE = {"score", "delinquent_due", "total_due", "years_delinquent", "market_
 FLAG_FILTERS = {  # query param -> column
     "delinquent": "is_delinquent", "out_of_state": "is_out_of_state", "estate": "is_estate",
     "long_held": "is_long_held", "vacant": "is_vacant", "absentee": "is_absentee",
-    "in_suit": "in_suit",
+    "in_suit": "in_suit", "judgment": "in_judgment", "bankruptcy": "in_bankruptcy", "deferral": "in_deferral",
+    "real_property": "is_real_property",
 }
+
+# Owners a letter can't reach: no mailing address, or a withheld/unknown name.
+UNMAILABLE_OWNERS = ("UNKNOWN", "CONFIDENTIAL OWNER", "CONFIDENTIAL")
 
 
 def _num(params: Mapping[str, str], key: str):
@@ -47,11 +51,16 @@ def build_where(params: Mapping[str, str]) -> Tuple[str, List]:
                 n = 100 - n
             clauses.append(f"{col} {op} ?")
             args.append(n)
+    if (params.get("mailable") or "") in ("1", "true"):
+        clauses.append("TRIM(COALESCE(mail_addr1, '')) <> '' AND UPPER(COALESCE(owner_name, '')) NOT IN (%s)"
+                       % ", ".join("?" * len(UNMAILABLE_OWNERS)))
+        args += list(UNMAILABLE_OWNERS)
     if (params.get("exclude_flood") or "") in ("1", "true"):
         clauses.append("COALESCE(flood_zone, 0) = 0")
     if (params.get("require_road") or "") in ("1", "true"):
         clauses.append("COALESCE(road_access, 1) = 1")
-    for key, col in (("mail_state", "mail_state"), ("state_code", "state_code"), ("city", "situs_city")):
+    for key, col in (("mail_state", "mail_state"), ("state_code", "state_code"), ("city", "situs_city"),
+                     ("roll", "roll")):
         v = (params.get(key) or "").strip().upper()
         if v:
             vals = [x.strip() for x in v.split(",") if x.strip()]
@@ -106,15 +115,22 @@ def detail(conn: sqlite3.Connection, account: str) -> Dict:
 
 
 def summary(conn: sqlite3.Connection) -> Dict:
-    one = lambda sql: conn.execute(sql).fetchone()[0]
+    def real(expr: str = "COUNT(*)", where: str = "1"):
+        """Headline numbers cover real property (land) only."""
+        return conn.execute(f"SELECT {expr} FROM parcels WHERE is_real_property = 1 AND {where}").fetchone()[0]
+
     return {
         "meta": {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM meta")},
-        "parcels": one("SELECT COUNT(*) FROM parcels"),
-        "delinquent": one("SELECT COUNT(*) FROM parcels WHERE is_delinquent = 1"),
-        "delinquent_due": one("SELECT ROUND(COALESCE(SUM(delinquent_due), 0), 2) FROM parcels"),
-        "out_of_state": one("SELECT COUNT(*) FROM parcels WHERE is_out_of_state = 1"),
-        "estate": one("SELECT COUNT(*) FROM parcels WHERE is_estate = 1"),
-        "vacant": one("SELECT COUNT(*) FROM parcels WHERE is_vacant = 1"),
+        "parcels": real(),
+        "delinquent": real(where="is_delinquent = 1"),
+        "delinquent_due": real("ROUND(COALESCE(SUM(delinquent_due), 0), 2)"),
+        "out_of_state": real(where="is_out_of_state = 1"),
+        "estate": real(where="is_estate = 1"),
+        "vacant": real(where="is_vacant = 1"),
+        "all_accounts": conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0],
+        "rolls": [dict(r) for r in conn.execute(
+            "SELECT roll, COUNT(*) AS n, MAX(is_real_property) AS real FROM parcels "
+            "GROUP BY roll ORDER BY real DESC, n DESC")],
         "mail_states": [r[0] for r in conn.execute(
             "SELECT mail_state FROM parcels WHERE COALESCE(mail_state,'') <> '' "
             "GROUP BY mail_state ORDER BY COUNT(*) DESC")],

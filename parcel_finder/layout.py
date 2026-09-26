@@ -56,7 +56,10 @@ class Field:
             if self.type == "date":
                 if text.strip("0") == "":
                     return None
-                return dt.datetime.strptime(text, self.date_format).date().isoformat()
+                d = dt.datetime.strptime(text, self.date_format).date()
+                # Placeholder dates: Denton uses 01/01/9999 for blank, and
+                # 1899/1900 show up as junk deed dates.
+                return None if d.year >= 9999 or d.year <= 1900 else d.isoformat()
         except (InvalidOperation, ValueError):
             return None
         raise LayoutError(f"unknown field type {self.type!r} for {self.name}")
@@ -142,6 +145,7 @@ class Layout:
     files: Dict[str, FileSpec]
     canonical: Dict[str, Dict[str, str]]
     homestead_pattern: str = r"\bHS\b"
+    extras: Dict[str, object] = field(default_factory=dict)   # code tables, city rules...
     path: Optional[pathlib.Path] = None
     notes: str = field(default="", repr=False)
 
@@ -188,4 +192,5 @@ def load_layout(name_or_path: str = "denton") -> Layout:
     return Layout(county=doc.get("county", path.stem), state=doc.get("state", "TX"),
                   files=files, canonical=canonical,
                   homestead_pattern=doc.get("homestead_exemption_pattern", r"\bHS\b"),
+                  extras={k: v for k, v in doc.items() if k not in ("files", "canonical")},
                   path=path, notes=doc.get("_status", ""))

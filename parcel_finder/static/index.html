@@ -62,7 +62,11 @@ tbody tr:hover { background: var(--accent-soft); }
 <aside>
   <input type="text" id="q" placeholder="Search owner, address, account, legal…">
 
+  <h3>Property type</h3>
+  <select id="ptype"><option value="__real">Real property (land)</option><option value="">All accounts</option></select>
+
   <h3>Mail list</h3>
+  <label><input type="checkbox" id="mailable" checked> Mailable owners only</label>
   <label>Top <input type="number" id="top_pct" min="1" max="100" style="width:60px"> % by score</label>
   <label>Min score <input type="number" id="min_score" style="width:60px"></label>
 
@@ -98,7 +102,7 @@ tbody tr:hover { background: var(--accent-soft); }
     <button id="reset">Reset</button>
     <button id="csv">Export CSV</button>
   </div>
-  <p class="small">Tip: “Top 25%” + Export CSV gives the mailing list.</p>
+  <p class="small">Tip: “Top 25%” + Export CSV gives the mailing list. Percentiles rank real property against real property only.</p>
 </aside>
 <main>
   <div class="bar"><span id="count"></span>
@@ -114,11 +118,13 @@ tbody tr:hover { background: var(--accent-soft); }
 
 <script>
 const FLAGS = [["delinquent","Tax-delinquent"],["out_of_state","Out-of-state owner"],["estate","Estate / heirs"],
-               ["long_held","Owned 10+ years"],["vacant","Vacant / no improvements"],["absentee","No homestead"],["in_suit","In tax suit"]];
+               ["long_held","Owned 10+ years"],["vacant","Vacant / no improvements"],["absentee","No homestead"],["in_suit","Tax suit filed"],
+               ["judgment","Tax judgment"],["bankruptcy","In bankruptcy"],["deferral","Tax deferral (65+/disabled)"]];
 const COLS = [["score","Score",true],["account","Account"],["owner_name","Owner"],["situs_address","Situs"],
               ["mail_state","Mail st"],["state_code","Code"],["acreage","Acres",true],["market_value","Value",true],
               ["years_delinquent","Yrs",true],["delinquent_due","Delinq $",true],["tags","Signals"]];
 const PAGE = 100;
+let RTYPES = {};
 let state = {sort: "score", dir: "desc", offset: 0};
 const $ = id => document.getElementById(id);
 const money = v => v == null ? "" : "$" + Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
@@ -133,7 +139,9 @@ const INPUTS = ["q","top_pct","min_score","min_years","min_due","min_value","max
 function params() {
   const p = new URLSearchParams();
   for (const id of INPUTS) { const v = $(id).value.trim(); if (v) p.set(id, v); }
-  for (const id of ["exclude_flood","require_road"]) if ($(id).checked) p.set(id, "1");
+  for (const id of ["exclude_flood","require_road","mailable"]) if ($(id).checked) p.set(id, "1");
+  const pt = $("ptype").value;
+  if (pt === "__real") p.set("real_property", "1"); else if (pt) p.set("roll", pt);
   p.set("sort", state.sort); p.set("dir", state.dir);
   return p;
 }
@@ -141,6 +149,9 @@ function tags(r) {
   const t = [];
   if (r.is_delinquent) t.push(`<span class="hot">delinq ${r.years_delinquent}y</span>`);
   if (r.in_suit) t.push(`<span class="hot">suit</span>`);
+  if (r.in_judgment) t.push(`<span class="hot">judgment</span>`);
+  if (r.in_bankruptcy) t.push(`<span>bankruptcy</span>`);
+  if (r.in_deferral) t.push(`<span>deferral</span>`);
   if (r.is_out_of_state) t.push(`<span>out-of-state</span>`);
   if (r.is_estate) t.push(`<span>estate</span>`);
   if (r.is_long_held) t.push(`<span>10+ yrs</span>`);
@@ -180,17 +191,20 @@ async function showDetail(acct) {
     <dl>${field("Owner 2", esc(p.owner_name2))}
       ${field("Mailing", [p.mail_addr1, p.mail_addr2, [p.mail_city, p.mail_state, p.mail_zip].filter(Boolean).join(" ")].filter(Boolean).map(esc).join("<br>"))}
       ${field("Situs", esc([p.situs_address, p.situs_city].filter(Boolean).join(", ")))}
-      ${field("Legal", esc(p.legal_desc))}${field("Property code", esc(p.state_code))}
+      ${field("Legal", esc(p.legal_desc))}${field("Property type", esc(p.roll))}${field("Property code", esc(p.state_code))}
+      ${field("Year built", p.year_built || "")}
       ${field("Acreage", p.acreage)}${field("Land value", money(p.land_value))}${field("Improvements", money(p.impr_value))}
       ${field("Market value", money(p.market_value))}${field("Exemptions", esc(p.exemptions))}${field("Deed date", esc(p.deed_date))}
       ${field("Delinquent years", p.years_delinquent ? `${p.years_delinquent} (${p.first_delinquent_year}–${p.last_delinquent_year})` : "none")}
       ${field("Delinquent due", money(p.delinquent_due))}${field("Total due", money(p.total_due))}
+      ${field("Collection status", [p.in_suit && "tax suit filed", p.in_judgment && "judgment", p.in_bankruptcy && "bankruptcy", p.in_deferral && "deferral"].filter(Boolean).join(", ") || "none")}
       ${field("Flood zone", p.flood_zone == null ? "unknown" : p.flood_zone ? "yes" : "no")}
       ${field("Road access", p.road_access == null ? "unknown" : p.road_access ? "yes" : "no")}</dl>
     <h3>Receivables</h3>
-    <table><thead><tr><th>Year</th><th>Unit</th><th class="num">Levy</th><th class="num">Due</th></tr></thead><tbody>
+    <table><thead><tr><th>Year</th><th>Unit</th><th>Type</th><th class="num">Levy</th><th class="num">Due</th></tr></thead><tbody>
     ${d.receivables.map(r => `<tr><td>${r.tax_year}</td><td>${esc(r.unit_name || r.unit_code)}</td>
-      <td class="num">${money(r.levy)}</td><td class="num">${money(r.total_due)}</td></tr>`).join("") || `<tr><td colspan="4" class="small">none</td></tr>`}
+      <td class="small">${esc(RTYPES[r.recv_type] || r.recv_type || "")}${r.judgment_date ? " · judgment " + esc(r.judgment_date) : r.suit_date ? " · suit " + esc(r.suit_date) : ""}</td>
+      <td class="num">${money(r.levy)}</td><td class="num">${money(r.total_due)}</td></tr>`).join("") || `<tr><td colspan="5" class="small">none</td></tr>`}
     </tbody></table>`;
   $("detail").classList.add("open");
   $("close").onclick = () => $("detail").classList.remove("open");
@@ -198,24 +212,31 @@ async function showDetail(acct) {
 async function init() {
   const s = await (await fetch("/api/summary")).json();
   const m = s.meta || {};
+  try { RTYPES = JSON.parse(m.receivable_types || "{}"); } catch (e) {}
   $("title").textContent = `${m.county || ""} County parcel finder`;
-  $("stats").innerHTML = [["parcels", s.parcels.toLocaleString()], ["delinquent", s.delinquent.toLocaleString()],
+  $("stats").innerHTML = [["real-property parcels", s.parcels.toLocaleString()], ["delinquent", s.delinquent.toLocaleString()],
     ["delinquent $", money(s.delinquent_due)], ["out-of-state", s.out_of_state.toLocaleString()],
     ["estate/heirs", s.estate.toLocaleString()], ["vacant", s.vacant.toLocaleString()],
-    ["as of", esc(m.as_of)]].map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("");
+    ["all accounts", s.all_accounts.toLocaleString()], ["as of", esc(m.as_of)]].map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("");
   if ((m.layout_notes || "").includes("DRAFT")) { $("warn").hidden = false; $("warn").textContent = m.layout_notes; }
   const opts = (id, list) => $(id).insertAdjacentHTML("beforeend", list.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(""));
   opts("state_code", s.state_codes.map(c => [c.state_code, `${c.state_code} (${c.n})`]));
+  opts("ptype", s.rolls.map(r => [r.roll, `${r.roll} (${r.n.toLocaleString()})`]));
   opts("city", s.cities.map(c => [c, c])); opts("mail_state", s.mail_states.map(c => [c, c]));
   const url = new URLSearchParams(location.search);
   for (const id of INPUTS) if (url.has(id)) $(id).value = url.get(id);
   for (const id of ["exclude_flood","require_road"]) $(id).checked = url.get(id) === "1";
+  if (url.toString()) {
+    $("mailable").checked = url.get("mailable") === "1";
+    $("ptype").value = url.get("real_property") === "1" ? "__real" : (url.get("roll") || "");
+  }
   if (url.has("sort")) state.sort = url.get("sort"); if (url.has("dir")) state.dir = url.get("dir");
   load();
 }
 $("apply").onclick = () => { state.offset = 0; load(); };
 $("q").addEventListener("keydown", e => { if (e.key === "Enter") { state.offset = 0; load(); } });
 $("reset").onclick = () => { INPUTS.forEach(id => $(id).value = ""); ["exclude_flood","require_road"].forEach(id => $(id).checked = false);
+  $("mailable").checked = true; $("ptype").value = "__real";
   state = {sort: "score", dir: "desc", offset: 0}; load(); };
 $("csv").onclick = () => { location.href = "/api/parcels.csv?" + params(); };
 $("prev").onclick = () => { state.offset = Math.max(0, state.offset - PAGE); load(); };

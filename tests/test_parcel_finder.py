@@ -45,10 +45,13 @@ def test_out_of_state_treats_blank_as_unknown():
 
 
 def test_vacant_by_improvements_or_code():
-    assert is_vacant(0, "A1")
+    assert is_vacant(0, "A1", land_value=40000)
     assert is_vacant(None, "C1")
-    assert not is_vacant(250000, "A1")
+    assert is_vacant(0, "010", ("010",))
+    assert not is_vacant(250000, "A1", land_value=40000)
     assert not is_vacant(None, "A1")
+    # Split left blank (land 0, impr 0) with only a total value: unknown, not vacant.
+    assert not is_vacant(0, "001", ("010",), land_value=0)
 
 
 def test_delinquent_through_year_uses_feb_1_cutoff():
@@ -72,7 +75,8 @@ def test_unknown_flood_and_road_do_not_penalise():
 def test_compute_signals_reads_parcel_fields():
     import re
     s = compute_signals({"years_delinquent": 2, "mail_state": "CA", "owner_name": "X HEIRS",
-                         "deed_date": "2001-05-01", "impr_value": 0, "exemptions": "HS OV65"},
+                         "deed_date": "2001-05-01", "impr_value": 0, "land_value": 9000,
+                         "exemptions": "HS OV65"},
                         as_of=AS_OF, homestead=re.compile(r"\bHS\b"))
     assert (s.delinquent, s.years_behind, s.out_of_state, s.estate, s.long_held, s.vacant, s.absentee) == \
         (True, 2, True, True, True, True, False)
@@ -80,12 +84,37 @@ def test_compute_signals_reads_parcel_fields():
 
 # ----------------------------------------------------------------- layout
 
+# Verbatim record from Denton's MR092226.DAT (2026-09-22 download).
+DENTON_MR = ("520746DEN                     202406800101000000067460000000000000000001.75000000001.75"
+             "02/01/202502/21/202501/01/9999                  01/01/9999                  01/01/9999"
+             "               00N   01/01/999901/01/999901/01/9999")
+
+
+def test_denton_layout_matches_the_guide(layout):
+    assert sum(f.length for f in layout.files["master"].fields) == 950
+    assert sum(f.length for f in layout.files["receivable"].fields) == 224
+    assert len(DENTON_MR) == 224
+    r = next(layout.files["receivable"].parse_lines([DENTON_MR]))
+    assert (r["ACCOUNT_NUMBER"], r["YEAR"], r["TAX_UNIT_NUMBER"], r["RECEIVABLE_TYPE_CODE"], r["SEQUENCE_NUMBER"]) \
+        == ("520746DEN", 2024, "068", "001", "01")
+    assert (r["VALUE"], r["LEVY"], r["AMOUNT_DUE"]) == (6746, 1.75, 1.75)
+    assert (r["DELINQUENCY_DATE"], r["DATE_3307"]) == ("2025-02-01", "2025-02-21")
+    assert r["JUDGMENT_DATE"] is None and r["SUIT_DATE"] is None     # 01/01/9999 = blank
+    assert r["INSTALLMENT"] == "N"
+
+
+def test_denton_homestead_codes(layout):
+    import re
+    hs = re.compile(layout.homestead_pattern)
+    assert hs.search("1-2-3") and hs.search("2-3-52") and hs.search("1")
+    assert not hs.search("128") and not hs.search("38-128") and not hs.search("") and not hs.search("108")
+
+
 def test_fixed_width_round_trip(layout):
     spec = layout.files["receivable"]
-    rec = {"ACCOUNT": "123", "TAX_YEAR": 2021, "UNIT_CODE": "S07", "LEVY": 1234.56,
-           "BASE_DUE": 1234.56, "PEN_INT_DUE": 10.0, "TOTAL_DUE": 1244.56, "SUIT_FLAG": "Y"}
-    parsed = next(spec.parse_lines([spec.format_record(rec)]))
-    assert parsed == rec
+    rec = next(spec.parse_lines([DENTON_MR]))
+    rec.update(SUIT_NUMBER="2024-1234", SUIT_DATE="2024-06-30", AMOUNT_DUE=1244.56)
+    assert next(spec.parse_lines([spec.format_record(rec)])) == rec
 
 
 def test_delimited_with_header():
@@ -96,7 +125,7 @@ def test_delimited_with_header():
 
 
 def test_file_kind_by_prefix(layout):
-    assert layout.kind_for("TaxRoll_V1/MM20260922.TXT") == "master"
+    assert layout.kind_for("TaxRoll_V1/MM092226.DAT") == "master"
     assert layout.kind_for("AR_FILE.txt") == "receivable"
     assert layout.kind_for("as2025.txt") == "statistic"
     assert layout.kind_for("TU.TXT") == "tax_unit"
@@ -116,7 +145,7 @@ def test_layout_rejects_unknown_canonical_column(tmp_path):
 
 def test_ingest_loads_every_file_kind(built):
     _, counts = built
-    assert counts["master"] == 400 and counts["tax_unit"] == 9
+    assert counts["master"] == 400 and counts["tax_unit"] == 10
     assert counts["receivable"] > 400
 
 
@@ -159,10 +188,10 @@ def test_filters_and_top_pct(built):
     conn, _ = built
     res = queries.search(conn, {"delinquent": "1", "out_of_state": "1"}, limit=500)
     assert all(r["is_delinquent"] and r["is_out_of_state"] for r in res["rows"])
-    top = queries.search(conn, {"top_pct": "25"}, limit=1000)
+    top = queries.search(conn, {"top_pct": "25", "real_property": "1"}, limit=1000)
     floor = min(r["score"] for r in top["rows"])
-    below = conn.execute("SELECT MAX(score) FROM parcels WHERE score_pct < 75").fetchone()[0]
-    assert below is None or below < floor
+    below = conn.execute("SELECT MAX(score) FROM parcels WHERE score_pct < 75 AND is_real_property = 1").fetchone()[0]
+    assert below is None or below <= floor      # nothing left out outscores what's in
     assert queries.search(conn, {"state_code": "C1"}, limit=1000)["rows"][0]["state_code"].startswith("C1")
 
 
@@ -176,3 +205,35 @@ def test_detail_joins_unit_names(built):
     acct = conn.execute("SELECT account FROM parcels WHERE is_delinquent=1 LIMIT 1").fetchone()[0]
     d = queries.detail(conn, acct)
     assert d["parcel"]["account"] == acct and d["receivables"][0]["unit_name"]
+
+
+def test_city_comes_from_city_tax_unit(built):
+    conn, _ = built
+    cities = {r[0] for r in conn.execute("SELECT DISTINCT situs_city FROM parcels")}
+    assert {"DENTON", "THE COLONY", "UNINCORPORATED"} <= cities
+    assert not any(c.startswith(("CITY OF", "TOWN OF")) for c in cities)
+
+
+def test_collection_status_flags_and_rolls(built):
+    conn, _ = built
+    n = lambda where: conn.execute(f"SELECT COUNT(*) FROM parcels WHERE {where}").fetchone()[0]
+    assert n("in_suit = 1") > 0 and n("in_judgment = 1") > 0 and n("in_deferral = 1") > 0
+    assert n("in_judgment = 1 AND in_suit = 0") == 0
+    assert 0 < n("is_real_property = 1") < 400
+    assert n("reasons LIKE '%tax deferral%' AND in_deferral = 0") == 0
+
+
+def test_top_pct_is_close_to_requested_share(built):
+    conn, _ = built
+    real = conn.execute("SELECT COUNT(*) FROM parcels WHERE is_real_property = 1").fetchone()[0]
+    got = queries.search(conn, {"top_pct": "25", "real_property": "1"}, limit=1000)["total"]
+    assert abs(got / real - 0.25) < 0.03
+
+
+def test_mailable_filter_drops_withheld_owners(built):
+    conn, _ = built
+    acct = conn.execute("SELECT account FROM parcels LIMIT 1").fetchone()[0]
+    conn.execute("UPDATE parcels SET owner_name = 'CONFIDENTIAL OWNER' WHERE account = ?", (acct,))
+    rows = queries.search(conn, {"mailable": "1", "q": acct}, limit=10)["rows"]
+    conn.rollback()
+    assert rows == []

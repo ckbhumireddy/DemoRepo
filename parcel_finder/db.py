@@ -15,6 +15,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import json
 import logging
 import pathlib
 import re
@@ -23,7 +24,7 @@ import zipfile
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 from .layout import FileSpec, Layout
-from .scoring import Weights, compute_signals, delinquent_through_year, score
+from .scoring import VACANT_CODES, Weights, compute_signals, delinquent_through_year, score
 
 log = logging.getLogger(__name__)
 BATCH = 5000
@@ -31,13 +32,13 @@ BATCH = 5000
 PARCEL_COLUMNS = [
     "account", "cad_id", "owner_name", "owner_name2",
     "mail_addr1", "mail_addr2", "mail_city", "mail_state", "mail_zip",
-    "situs_address", "situs_city", "legal_desc", "state_code",
-    "acreage", "land_value", "impr_value", "market_value", "exemptions", "deed_date",
+    "situs_address", "situs_city", "legal_desc", "state_code", "roll_code", "roll",
+    "acreage", "land_value", "impr_value", "market_value", "exemptions", "deed_date", "year_built",
     "years_delinquent", "first_delinquent_year", "last_delinquent_year",
-    "delinquent_due", "total_due", "in_suit",
+    "delinquent_due", "total_due", "in_suit", "in_judgment", "in_bankruptcy", "in_deferral",
     "flood_zone", "road_access",
-    "is_delinquent", "is_out_of_state", "is_estate", "is_long_held", "is_vacant", "is_absentee",
-    "score", "score_pct", "reasons",
+    "is_real_property", "is_delinquent", "is_out_of_state", "is_estate", "is_long_held", "is_vacant",
+    "is_absentee", "score", "score_pct", "reasons",
 ]
 
 
@@ -126,12 +127,85 @@ def _has_table(conn, name: str) -> bool:
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
+def _receivables(conn, layout: Layout):
+    """One row per receivable. The county's two zips overlap, so identical keys
+    (account/year/unit/type/sequence) are collapsed, keeping the larger balance."""
+    conn.execute("DROP TABLE IF EXISTS receivables")
+    rmap = layout.canonical.get("receivable", {})
+    if not (_has_table(conn, "raw_receivable") and rmap):
+        conn.execute("CREATE TABLE receivables (account TEXT, tax_year INT, unit_code TEXT, total_due REAL)")
+        return rmap
+    keys = [k for k in ("account", "tax_year", "unit_code", "recv_type", "sequence") if k in rmap]
+    others = [k for k in rmap if k not in keys]
+    cols = [f'"{rmap[k]}" AS {k}' for k in keys] + [f'MAX("{rmap[k]}") AS {k}' for k in others]
+    conn.execute(f"CREATE TABLE receivables AS SELECT {', '.join(cols)} FROM raw_receivable "
+                 f"GROUP BY {', '.join(str(i + 1) for i in range(len(keys)))}")
+    conn.execute("CREATE INDEX ix_recv_account ON receivables(account)")
+    return rmap
+
+
+def _account_rollup(conn, rmap: Dict[str, str], as_of: dt.date) -> Dict[str, Dict]:
+    """Per-account delinquency summary from the receivables.
+
+    A receivable is delinquent once its delinquency date has passed; without
+    one, once its tax year's Feb 1 deadline has (see delinquent_through_year).
+    """
+    through = delinquent_through_year(as_of)
+    past_due = (f"(total_due > 0 AND COALESCE(delinquent_date <= :d, tax_year <= :y))"
+                if "delinquent_date" in rmap else "(total_due > 0 AND tax_year <= :y)")
+
+    def flag(col, cond):
+        return f"MAX(CASE WHEN {cond} THEN 1 ELSE 0 END)" if col in rmap else "0"
+
+    blank = "TRIM(COALESCE({c}, '')) NOT IN ('', 'N', '0')"
+    suit = " OR ".join(x for x in (
+        "suit_date IS NOT NULL" if "suit_date" in rmap else "",
+        blank.format(c="suit_number") if "suit_number" in rmap else "",
+        blank.format(c="suit_flag") if "suit_flag" in rmap else "") if x) or "0"
+    sql = f"""
+        SELECT account,
+               COUNT(DISTINCT CASE WHEN {past_due} THEN tax_year END) AS years_delinquent,
+               MIN(CASE WHEN {past_due} THEN tax_year END) AS first_delinquent_year,
+               MAX(CASE WHEN {past_due} THEN tax_year END) AS last_delinquent_year,
+               ROUND(SUM(CASE WHEN {past_due} THEN total_due ELSE 0 END), 2) AS delinquent_due,
+               ROUND(SUM(CASE WHEN total_due > 0 THEN total_due ELSE 0 END), 2) AS total_due,
+               MAX(CASE WHEN {suit} THEN 1 ELSE 0 END) AS in_suit,
+               {flag("judgment_date", "judgment_date IS NOT NULL")} AS in_judgment,
+               {flag("bankruptcy_date", "bankruptcy_date IS NOT NULL AND total_due > 0")} AS in_bankruptcy
+        FROM receivables GROUP BY account"""
+    return {r["account"]: dict(r) for r in conn.execute(sql, {"y": through, "d": as_of.isoformat()})}
+
+
+def _account_cities(conn, layout: Layout) -> Dict[str, str]:
+    """Situs city from the account's city taxing unit (e.g. C05 CITY OF DENTON).
+
+    Tax-office rolls often carry no situs city, but every parcel inside a city
+    is billed by it; parcels with no city unit are unincorporated.
+    """
+    pattern = layout.extras.get("city_unit_pattern")
+    if not pattern or not _has_table(conn, "tax_units"):
+        return {}
+    strip = re.compile(layout.extras.get("city_name_strip", "^(CITY|TOWN) OF "), re.IGNORECASE)
+    alpha = re.compile(pattern)
+    names = {}
+    for u in conn.execute("SELECT * FROM tax_units"):
+        u = dict(u)
+        if alpha.search(u.get("unit_alpha") or u.get("unit_code") or ""):
+            names[u["unit_code"]] = strip.sub("", u.get("unit_name") or "").split("-")[0].strip()
+    if not names:
+        return {}
+    out: Dict[str, str] = {}
+    for acct, unit in conn.execute("SELECT account, unit_code FROM receivables WHERE unit_code IN (%s) "
+                                   "ORDER BY tax_year" % ",".join("?" * len(names)), list(names)):
+        out[acct] = names[unit]           # latest year wins (annexations)
+    return out
+
+
 def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] = None,
           weights: Weights = Weights(), long_held_years: int = 10) -> int:
     as_of = as_of or dt.date.today()
     through = delinquent_through_year(as_of)
 
-    # Tax units ------------------------------------------------------------
     conn.execute("DROP TABLE IF EXISTS tax_units")
     if _has_table(conn, "raw_tax_unit") and "tax_unit" in layout.canonical:
         conn.execute(f"CREATE TABLE tax_units AS SELECT DISTINCT {_select_canonical(layout, 'tax_unit')} "
@@ -139,64 +213,46 @@ def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] 
     else:
         conn.execute("CREATE TABLE tax_units (unit_code TEXT, unit_name TEXT)")
 
-    # Receivables: one row per account/year/unit. The two county zips can
-    # overlap, so keep the larger balance rather than double-counting.
-    conn.execute("DROP TABLE IF EXISTS receivables")
-    rmap = layout.canonical.get("receivable", {})
-    if _has_table(conn, "raw_receivable") and rmap:
-        cols = [c for c in rmap if c not in ("account", "tax_year", "unit_code")]
-        agg = ", ".join(f'MAX("{rmap[c]}") AS {c}' for c in cols)
-        conn.execute(f'''CREATE TABLE receivables AS
-            SELECT "{rmap["account"]}" AS account, "{rmap["tax_year"]}" AS tax_year,
-                   "{rmap.get("unit_code", rmap["account"])}" AS unit_code, {agg}
-            FROM raw_receivable GROUP BY 1, 2, 3''')
-    else:
-        conn.execute("CREATE TABLE receivables (account TEXT, tax_year INT, unit_code TEXT, total_due REAL)")
-    conn.execute("CREATE INDEX IF NOT EXISTS ix_recv_account ON receivables(account)")
+    rmap = _receivables(conn, layout)
+    rollup = _account_rollup(conn, rmap, as_of)
+    cities = _account_cities(conn, layout)
 
-    has_suit = "suit_flag" in rmap
-    delinquent = {
-        r["account"]: dict(r) for r in conn.execute(f'''
-            SELECT account,
-                   COUNT(DISTINCT CASE WHEN tax_year <= :y AND total_due > 0 THEN tax_year END) AS years_delinquent,
-                   MIN(CASE WHEN tax_year <= :y AND total_due > 0 THEN tax_year END) AS first_delinquent_year,
-                   MAX(CASE WHEN tax_year <= :y AND total_due > 0 THEN tax_year END) AS last_delinquent_year,
-                   ROUND(SUM(CASE WHEN tax_year <= :y AND total_due > 0 THEN total_due ELSE 0 END), 2) AS delinquent_due,
-                   ROUND(SUM(CASE WHEN total_due > 0 THEN total_due ELSE 0 END), 2) AS total_due,
-                   {"MAX(CASE WHEN TRIM(COALESCE(suit_flag,'')) NOT IN ('', 'N', '0') THEN 1 ELSE 0 END)" if has_suit else "0"} AS in_suit
-            FROM receivables GROUP BY account''', {"y": through})
-    }
-
-    # Optional GIS enrichment (flood zone / road access) ----------------------
     conn.execute("CREATE TABLE IF NOT EXISTS enrichment (account TEXT PRIMARY KEY, flood_zone INTEGER, "
                  "road_access INTEGER, source TEXT)")
     enrich = {r["account"]: dict(r) for r in conn.execute("SELECT * FROM enrichment")}
 
-    # Parcels ------------------------------------------------------------------
     conn.execute("DROP TABLE IF EXISTS parcels")
-    conn.execute(f"""CREATE TABLE parcels ({", ".join(PARCEL_COLUMNS)},
-                     PRIMARY KEY (account))""")
+    conn.execute(f"CREATE TABLE parcels ({', '.join(PARCEL_COLUMNS)}, PRIMARY KEY (account))")
     mmap = layout.canonical["master"]
     homestead = re.compile(layout.homestead_pattern, re.IGNORECASE)
+    vacant_codes = tuple(layout.extras.get("vacant_codes") or VACANT_CODES)
+    real_rolls = set(layout.extras.get("real_property_rolls") or [])
+    roll_names = layout.extras.get("roll_codes") or {}
     # Last-loaded row wins when an account appears in more than one file.
     master_sql = (f"SELECT {_select_canonical(layout, 'master')} FROM raw_master "
                   f"WHERE rowid IN (SELECT MAX(rowid) FROM raw_master GROUP BY \"{mmap['account']}\")")
     rows: List[Dict] = []
     for m in conn.execute(master_sql):
+        m = dict(m)
         p = {c: None for c in PARCEL_COLUMNS}
-        p.update({k: m[k] for k in m.keys() if k in p})
-        situs = " ".join(x for x in (m["situs_num"] if "situs_num" in m.keys() else None,
-                                     m["situs_street"] if "situs_street" in m.keys() else None) if x)
-        p["situs_address"] = situs or (m["situs_address"] if "situs_address" in m.keys() else None)
-        d = delinquent.get(p["account"], {})
-        for k in ("years_delinquent", "first_delinquent_year", "last_delinquent_year",
-                  "delinquent_due", "total_due", "in_suit"):
-            p[k] = d.get(k) or (0 if k in ("years_delinquent", "delinquent_due", "total_due", "in_suit") else None)
+        p.update({k: v for k, v in m.items() if k in p})
+        num = (m.get("situs_num") or "").lstrip("0")
+        p["situs_address"] = " ".join(x for x in (num, m.get("situs_street")) if x) or m.get("situs_address")
+        p["situs_city"] = m.get("situs_city") or cities.get(p["account"]) or ("UNINCORPORATED" if cities else None)
+        p["roll"] = roll_names.get(p["roll_code"] or "", p["roll_code"])
+        p["is_real_property"] = int(not real_rolls or p["roll_code"] in real_rolls)
+        # Guide: a deferral start with no end date means the account is in deferral.
+        p["in_deferral"] = int(bool(m.get("deferral_start")) and not m.get("deferral_end"))
+        d = rollup.get(p["account"], {})
+        for k in ("years_delinquent", "delinquent_due", "total_due", "in_suit", "in_judgment", "in_bankruptcy"):
+            p[k] = d.get(k) or 0
+        p["first_delinquent_year"] = d.get("first_delinquent_year")
+        p["last_delinquent_year"] = d.get("last_delinquent_year")
         e = enrich.get(p["account"], {})
         p["flood_zone"], p["road_access"] = e.get("flood_zone"), e.get("road_access")
 
         s = compute_signals(p, as_of=as_of, home_state=layout.state, homestead=homestead,
-                            long_held_years=long_held_years)
+                            long_held_years=long_held_years, vacant_codes=vacant_codes)
         p["score"] = score(s, weights)
         p["reasons"] = "; ".join(s.reasons)
         p.update(is_delinquent=int(s.delinquent), is_out_of_state=int(s.out_of_state),
@@ -204,30 +260,44 @@ def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] 
                  is_vacant=int(s.vacant), is_absentee=int(s.absentee))
         rows.append(p)
 
-    # score_pct = share of parcels scoring at or below this one (100 = top).
-    rows.sort(key=lambda r: r["score"])
-    n, i = len(rows), 0
-    while i < n:
-        j = i
-        while j < n and rows[j]["score"] == rows[i]["score"]:
-            j += 1
-        for r in rows[i:j]:
-            r["score_pct"] = round(100.0 * j / n, 1)
-        i = j
-
+    _rank(rows)
     placeholders = ", ".join("?" * len(PARCEL_COLUMNS))
     conn.executemany(f"INSERT INTO parcels VALUES ({placeholders})",
                      [[r[c] for c in PARCEL_COLUMNS] for r in rows])
-    for col in ("score", "mail_state", "state_code", "owner_name", "situs_city", "years_delinquent", "delinquent_due"):
+    for col in ("score", "mail_state", "state_code", "owner_name", "situs_city", "years_delinquent",
+                "delinquent_due", "roll_code"):
         conn.execute(f"CREATE INDEX IF NOT EXISTS ix_parcels_{col} ON parcels({col})")
 
     conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
     meta = {"county": layout.county, "state": layout.state, "as_of": as_of.isoformat(),
             "delinquent_through_year": str(through), "built_at": dt.datetime.now().isoformat(timespec="seconds"),
-            "layout_notes": layout.notes, "weights": repr(weights.as_dict())}
+            "layout_notes": layout.notes, "weights": repr(weights.as_dict()),
+            "receivable_types": json.dumps(layout.extras.get("receivable_types") or {})}
     conn.executemany("INSERT OR REPLACE INTO meta VALUES (?, ?)", meta.items())
     conn.commit()
-    return n
+    return len(rows)
+
+
+def _rank(rows: List[Dict]) -> None:
+    """score_pct = share of comparable parcels ranked at or below this one
+    (100 = top). Ties on score break by delinquent amount, then value, so "top 25%" is
+    close to 25% rather than every parcel sharing the cut-off score. Real
+    property is ranked among real property only, so mineral interests and
+    business personal property don't dilute the mail list."""
+    groups: Dict[int, List[Dict]] = {}
+    for r in rows:
+        groups.setdefault(r["is_real_property"], []).append(r)
+    for group in groups.values():
+        key = lambda r: (r["score"], r["delinquent_due"] or 0, r["market_value"] or 0)
+        group.sort(key=key)
+        n, i = len(group), 0
+        while i < n:
+            j = i
+            while j < n and key(group[j]) == key(group[i]):
+                j += 1
+            for r in group[i:j]:
+                r["score_pct"] = round(100.0 * j / n, 1)
+            i = j
 
 
 # ----------------------------------------------------------------- enrichment

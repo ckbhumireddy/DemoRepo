@@ -51,7 +51,7 @@ def _parser() -> argparse.ArgumentParser:
     s = sub.add_parser("build", help="roll up delinquency, apply enrichment, score every parcel")
     s.add_argument("--as-of", type=dt.date.fromisoformat, help="YYYY-MM-DD (default today)")
     s.add_argument("--long-held-years", type=int, default=10)
-    for name, default in Weights().as_dict().items():
+    for name, default in Weights().as_dict().items():  # --w-out-of-state 3, --w-deferral 0, ...
         s.add_argument(f"--w-{name.replace('_', '-')}", type=int, default=default, dest=f"w_{name}",
                        help=f"score weight (default {default:+d})")
 
@@ -63,6 +63,10 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--top-pct", type=float, help="keep only the top N%% by score, e.g. 25")
     s.add_argument("--min-score", type=float)
     s.add_argument("--delinquent", action="store_true")
+    s.add_argument("--all-types", action="store_true",
+                   help="include minerals / business personal property (default: real property only)")
+    s.add_argument("--include-unmailable", action="store_true",
+                   help="keep owners with no mailing address or a withheld name")
 
     s = sub.add_parser("serve", help="run the local web page")
     s.add_argument("--host", default="127.0.0.1")
@@ -104,8 +108,9 @@ def cmd_build(conn, layout, args):
     w = Weights(**{k: getattr(args, f"w_{k}") for k in Weights().as_dict()})
     n = db.build(conn, layout, as_of=args.as_of, weights=w, long_held_years=args.long_held_years)
     s = queries.summary(conn)
-    print(f"Built {n:,} parcels: {s['delinquent']:,} delinquent (${s['delinquent_due']:,.0f}), "
-          f"{s['out_of_state']:,} out-of-state, {s['estate']:,} estate/heirs, {s['vacant']:,} vacant.")
+    print(f"Built {n:,} accounts; real property: {s['parcels']:,} parcels, {s['delinquent']:,} delinquent "
+          f"(${s['delinquent_due']:,.0f}), {s['out_of_state']:,} out-of-state, {s['estate']:,} estate/heirs, "
+          f"{s['vacant']:,} vacant.")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -133,7 +138,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"Merged {db.load_enrichment(conn, args.csv):,} enrichment rows; now re-run `build`.")
     elif args.cmd == "export":
         params = {"top_pct": args.top_pct, "min_score": args.min_score,
-                  "delinquent": "1" if args.delinquent else None}
+                  "delinquent": "1" if args.delinquent else None,
+                  "real_property": None if args.all_types else "1",
+                  "mailable": None if args.include_unmailable else "1"}
         params = {k: str(v) for k, v in params.items() if v is not None}
         with open(args.out, "w", newline="") as fh:
             w = csv.writer(fh)
