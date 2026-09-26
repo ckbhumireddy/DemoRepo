@@ -1,0 +1,109 @@
+{
+  "county": "Denton",
+  "state": "TX",
+  "_status": "DRAFT: field positions below are placeholders and have NOT been checked against Denton's File-Layout-Guide PDF (https://www.dentoncounty.gov/DocumentCenter/View/11841/File-Layout-Guide-PDF). Run `python -m parcel_finder inspect <zip>` on a real download, then correct start/length for each field. The synthetic demo data is written with this same layout, so the demo works either way.",
+  "encoding": "latin-1",
+
+  "files": {
+    "master": {
+      "prefixes": ["MM", "AM"],
+      "format": "fixed",
+      "fields": [
+        {"name": "ACCOUNT",        "start": 1,   "length": 20},
+        {"name": "CAD_ID",         "start": 21,  "length": 20},
+        {"name": "OWNER_NAME",     "start": 41,  "length": 40},
+        {"name": "OWNER_NAME2",    "start": 81,  "length": 40},
+        {"name": "MAIL_ADDR1",     "start": 121, "length": 40},
+        {"name": "MAIL_ADDR2",     "start": 161, "length": 40},
+        {"name": "MAIL_CITY",      "start": 201, "length": 30},
+        {"name": "MAIL_STATE",     "start": 231, "length": 2},
+        {"name": "MAIL_ZIP",       "start": 233, "length": 10},
+        {"name": "SITUS_NUM",      "start": 243, "length": 10},
+        {"name": "SITUS_STREET",   "start": 253, "length": 40},
+        {"name": "SITUS_CITY",     "start": 293, "length": 30},
+        {"name": "LEGAL_DESC",     "start": 323, "length": 60},
+        {"name": "STATE_CODE",     "start": 383, "length": 4},
+        {"name": "ACREAGE",        "start": 387, "length": 12, "type": "decimal", "implied_decimals": 4},
+        {"name": "LAND_VALUE",     "start": 399, "length": 12, "type": "int"},
+        {"name": "IMPR_VALUE",     "start": 411, "length": 12, "type": "int"},
+        {"name": "MARKET_VALUE",   "start": 423, "length": 12, "type": "int"},
+        {"name": "EXEMPTIONS",     "start": 435, "length": 20},
+        {"name": "DEED_DATE",      "start": 455, "length": 8,  "type": "date", "date_format": "%Y%m%d"}
+      ]
+    },
+    "receivable": {
+      "prefixes": ["MR", "AR"],
+      "format": "fixed",
+      "fields": [
+        {"name": "ACCOUNT",        "start": 1,   "length": 20},
+        {"name": "TAX_YEAR",       "start": 21,  "length": 4,  "type": "int"},
+        {"name": "UNIT_CODE",      "start": 25,  "length": 4},
+        {"name": "LEVY",           "start": 29,  "length": 12, "type": "decimal", "implied_decimals": 2},
+        {"name": "BASE_DUE",       "start": 41,  "length": 12, "type": "decimal", "implied_decimals": 2},
+        {"name": "PEN_INT_DUE",    "start": 53,  "length": 12, "type": "decimal", "implied_decimals": 2},
+        {"name": "TOTAL_DUE",      "start": 65,  "length": 12, "type": "decimal", "implied_decimals": 2},
+        {"name": "SUIT_FLAG",      "start": 77,  "length": 1}
+      ]
+    },
+    "statistic": {
+      "prefixes": ["MS", "AS"],
+      "format": "fixed",
+      "fields": [
+        {"name": "ACCOUNT",        "start": 1,   "length": 20},
+        {"name": "TAX_YEAR",       "start": 21,  "length": 4,  "type": "int"},
+        {"name": "UNIT_CODE",      "start": 25,  "length": 4},
+        {"name": "MARKET_VALUE",   "start": 29,  "length": 12, "type": "int"},
+        {"name": "TAXABLE_VALUE",  "start": 41,  "length": 12, "type": "int"}
+      ]
+    },
+    "tax_unit": {
+      "prefixes": ["TU"],
+      "format": "fixed",
+      "fields": [
+        {"name": "UNIT_CODE",      "start": 1,   "length": 4},
+        {"name": "UNIT_ALPHA",     "start": 5,   "length": 10},
+        {"name": "UNIT_NAME",      "start": 15,  "length": 50}
+      ]
+    }
+  },
+
+  "canonical": {
+    "master": {
+      "account": "ACCOUNT",
+      "cad_id": "CAD_ID",
+      "owner_name": "OWNER_NAME",
+      "owner_name2": "OWNER_NAME2",
+      "mail_addr1": "MAIL_ADDR1",
+      "mail_addr2": "MAIL_ADDR2",
+      "mail_city": "MAIL_CITY",
+      "mail_state": "MAIL_STATE",
+      "mail_zip": "MAIL_ZIP",
+      "situs_num": "SITUS_NUM",
+      "situs_street": "SITUS_STREET",
+      "situs_city": "SITUS_CITY",
+      "legal_desc": "LEGAL_DESC",
+      "state_code": "STATE_CODE",
+      "acreage": "ACREAGE",
+      "land_value": "LAND_VALUE",
+      "impr_value": "IMPR_VALUE",
+      "market_value": "MARKET_VALUE",
+      "exemptions": "EXEMPTIONS",
+      "deed_date": "DEED_DATE"
+    },
+    "receivable": {
+      "account": "ACCOUNT",
+      "tax_year": "TAX_YEAR",
+      "unit_code": "UNIT_CODE",
+      "levy": "LEVY",
+      "base_due": "BASE_DUE",
+      "total_due": "TOTAL_DUE",
+      "suit_flag": "SUIT_FLAG"
+    },
+    "tax_unit": {
+      "unit_code": "UNIT_CODE",
+      "unit_name": "UNIT_NAME"
+    }
+  },
+
+  "homestead_exemption_pattern": "\\bHS\\b|HOMESTEAD"
+}

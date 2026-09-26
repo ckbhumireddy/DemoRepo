@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parcel Finder</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --ink: #1c2330; --muted: #5d6778; --line: #dde2ea;
+  --accent: #2458c6; --accent-soft: #e6eefc; --good: #1f7a4d; --bad: #b3261e; --warn-bg: #fff4d6; --warn-ink: #6b4e00;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #12151b; --panel: #1b2029; --ink: #e5e9f0; --muted: #98a2b3; --line: #2c3340;
+          --accent: #7aa2ff; --accent-soft: #22304d; --good: #5cc58f; --bad: #ff8a80; --warn-bg: #3a300f; --warn-ink: #f4d27a; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--ink); }
+header { padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex; gap: 24px; align-items: baseline; flex-wrap: wrap; }
+header h1 { font-size: 18px; margin: 0; }
+.stats { display: flex; gap: 20px; flex-wrap: wrap; color: var(--muted); }
+.stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.warn { background: var(--warn-bg); color: var(--warn-ink); padding: 8px 20px; font-size: 13px; }
+.wrap { display: grid; grid-template-columns: 270px 1fr; min-height: calc(100vh - 60px); }
+aside { border-right: 1px solid var(--line); background: var(--panel); padding: 14px 16px; overflow-y: auto; }
+aside h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 6px; }
+aside label { display: flex; align-items: center; gap: 6px; margin: 4px 0; cursor: pointer; }
+aside input[type=text], aside input[type=number], aside select { width: 100%; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tri { display: grid; grid-template-columns: 1fr auto; align-items: center; margin: 3px 0; }
+.tri select { width: auto; padding: 2px 4px; }
+button { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+main { padding: 14px 20px; overflow-x: auto; }
+.bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 10px; flex-wrap: wrap; color: var(--muted); }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; user-select: none; position: sticky; top: 0; background: var(--panel); }
+th.sorted { color: var(--accent); }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--accent-soft); }
+.score { display: inline-block; min-width: 28px; text-align: center; border-radius: 10px; padding: 1px 6px; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
+.tags span { display: inline-block; font-size: 11px; padding: 0 5px; margin: 1px 2px 1px 0; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tags span.hot { color: var(--bad); border-color: var(--bad); }
+.small { font-size: 12px; color: var(--muted); }
+#detail { position: fixed; top: 0; right: 0; width: min(560px, 100%); height: 100%; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -6px 0 18px rgba(0,0,0,.15); padding: 18px; overflow-y: auto; transform: translateX(105%); transition: transform .18s; }
+#detail.open { transform: none; }
+#detail dl { display: grid; grid-template-columns: 140px 1fr; gap: 4px 10px; margin: 10px 0; }
+#detail dt { color: var(--muted); }
+#detail dd { margin: 0; }
+@media (max-width: 800px) { .wrap { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Parcel Finder</h1>
+  <div class="stats" id="stats"></div>
+</header>
+<div class="warn" id="warn" hidden></div>
+<div class="wrap">
+<aside>
+  <input type="text" id="q" placeholder="Search owner, address, account, legal…">
+
+  <h3>Mail list</h3>
+  <label>Top <input type="number" id="top_pct" min="1" max="100" style="width:60px"> % by score</label>
+  <label>Min score <input type="number" id="min_score" style="width:60px"></label>
+
+  <h3>Seller signals</h3>
+  <div id="flags"></div>
+
+  <h3>Delinquency</h3>
+  <div class="row2">
+    <input type="number" id="min_years" placeholder="Min yrs behind">
+    <input type="number" id="min_due" placeholder="Min $ due">
+  </div>
+
+  <h3>Parcel</h3>
+  <div class="row2">
+    <input type="number" id="min_value" placeholder="Min value">
+    <input type="number" id="max_value" placeholder="Max value">
+    <input type="number" id="min_acres" placeholder="Min acres" step="0.01">
+    <input type="number" id="max_acres" placeholder="Max acres" step="0.01">
+  </div>
+  <h3>Property code</h3>
+  <select id="state_code"><option value="">Any</option></select>
+  <h3>Situs city</h3>
+  <select id="city"><option value="">Any</option></select>
+  <h3>Mailing state</h3>
+  <select id="mail_state"><option value="">Any</option></select>
+
+  <h3>Location risk</h3>
+  <label><input type="checkbox" id="exclude_flood"> Exclude flood zone</label>
+  <label><input type="checkbox" id="require_road"> Exclude no road access</label>
+
+  <div class="btns">
+    <button class="primary" id="apply">Apply</button>
+    <button id="reset">Reset</button>
+    <button id="csv">Export CSV</button>
+  </div>
+  <p class="small">Tip: “Top 25%” + Export CSV gives the mailing list.</p>
+</aside>
+<main>
+  <div class="bar"><span id="count"></span>
+    <span><button id="prev">‹ Prev</button> <span id="page"></span> <button id="next">Next ›</button></span>
+  </div>
+  <table>
+    <thead><tr id="head"></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</main>
+</div>
+<div id="detail"></div>
+
+<script>
+const FLAGS = [["delinquent","Tax-delinquent"],["out_of_state","Out-of-state owner"],["estate","Estate / heirs"],
+               ["long_held","Owned 10+ years"],["vacant","Vacant / no improvements"],["absentee","No homestead"],["in_suit","In tax suit"]];
+const COLS = [["score","Score",true],["account","Account"],["owner_name","Owner"],["situs_address","Situs"],
+              ["mail_state","Mail st"],["state_code","Code"],["acreage","Acres",true],["market_value","Value",true],
+              ["years_delinquent","Yrs",true],["delinquent_due","Delinq $",true],["tags","Signals"]];
+const PAGE = 100;
+let state = {sort: "score", dir: "desc", offset: 0};
+const $ = id => document.getElementById(id);
+const money = v => v == null ? "" : "$" + Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+$("flags").innerHTML = FLAGS.map(([k, l]) =>
+  `<div class="tri"><span>${l}</span><select id="${k}"><option value="">any</option><option value="1">yes</option><option value="0">no</option></select></div>`).join("");
+$("head").innerHTML = COLS.map(([k, l]) => `<th data-k="${k}">${l}</th>`).join("");
+
+const INPUTS = ["q","top_pct","min_score","min_years","min_due","min_value","max_value","min_acres","max_acres",
+                "state_code","city","mail_state", ...FLAGS.map(f => f[0])];
+function params() {
+  const p = new URLSearchParams();
+  for (const id of INPUTS) { const v = $(id).value.trim(); if (v) p.set(id, v); }
+  for (const id of ["exclude_flood","require_road"]) if ($(id).checked) p.set(id, "1");
+  p.set("sort", state.sort); p.set("dir", state.dir);
+  return p;
+}
+function tags(r) {
+  const t = [];
+  if (r.is_delinquent) t.push(`<span class="hot">delinq ${r.years_delinquent}y</span>`);
+  if (r.in_suit) t.push(`<span class="hot">suit</span>`);
+  if (r.is_out_of_state) t.push(`<span>out-of-state</span>`);
+  if (r.is_estate) t.push(`<span>estate</span>`);
+  if (r.is_long_held) t.push(`<span>10+ yrs</span>`);
+  if (r.is_vacant) t.push(`<span>vacant</span>`);
+  if (r.is_absentee) t.push(`<span>no HS</span>`);
+  if (r.flood_zone) t.push(`<span class="hot">flood</span>`);
+  if (r.road_access === 0) t.push(`<span class="hot">no road</span>`);
+  return `<div class="tags">${t.join("")}</div>`;
+}
+async function load() {
+  const p = params(); p.set("limit", PAGE); p.set("offset", state.offset);
+  history.replaceState(null, "", "?" + p.toString());
+  const res = await fetch("/api/parcels?" + p); const d = await res.json();
+  if (d.error) { $("rows").innerHTML = `<tr><td colspan="11">${esc(d.error)}</td></tr>`; return; }
+  $("count").textContent = `${d.total.toLocaleString()} parcels match`;
+  const pages = Math.max(1, Math.ceil(d.total / PAGE));
+  $("page").textContent = `page ${Math.floor(state.offset / PAGE) + 1} / ${pages}`;
+  $("prev").disabled = state.offset === 0; $("next").disabled = state.offset + PAGE >= d.total;
+  document.querySelectorAll("th").forEach(th => th.classList.toggle("sorted", th.dataset.k === state.sort));
+  $("rows").innerHTML = d.rows.map(r => `<tr data-a="${esc(r.account)}">
+    <td class="num"><span class="score">${r.score}</span></td><td>${esc(r.account)}</td>
+    <td>${esc(r.owner_name)}${r.owner_name2 ? `<div class="small">${esc(r.owner_name2)}</div>` : ""}</td>
+    <td>${esc(r.situs_address)}<div class="small">${esc(r.situs_city)}</div></td>
+    <td>${esc(r.mail_state)}</td><td>${esc(r.state_code)}</td>
+    <td class="num">${r.acreage == null ? "" : Number(r.acreage).toFixed(2)}</td>
+    <td class="num">${money(r.market_value)}</td><td class="num">${r.years_delinquent || ""}</td>
+    <td class="num">${r.delinquent_due ? money(r.delinquent_due) : ""}</td><td>${tags(r)}</td></tr>`).join("")
+    || `<tr><td colspan="11" class="small">No parcels match these filters.</td></tr>`;
+}
+async function showDetail(acct) {
+  const d = await (await fetch("/api/parcel/" + encodeURIComponent(acct))).json();
+  const p = d.parcel; if (!p) return;
+  const field = (l, v) => v == null || v === "" ? "" : `<dt>${l}</dt><dd>${v}</dd>`;
+  $("detail").innerHTML = `<button id="close" style="float:right">Close</button>
+    <h2 style="margin:0 0 4px">${esc(p.owner_name)}</h2><div class="small">Account ${esc(p.account)}${p.cad_id ? " · CAD " + esc(p.cad_id) : ""}</div>
+    <p><span class="score">${p.score}</span> <span class="small">${p.score_pct} percentile · ${esc(p.reasons)}</span></p>
+    <dl>${field("Owner 2", esc(p.owner_name2))}
+      ${field("Mailing", [p.mail_addr1, p.mail_addr2, [p.mail_city, p.mail_state, p.mail_zip].filter(Boolean).join(" ")].filter(Boolean).map(esc).join("<br>"))}
+      ${field("Situs", esc([p.situs_address, p.situs_city].filter(Boolean).join(", ")))}
+      ${field("Legal", esc(p.legal_desc))}${field("Property code", esc(p.state_code))}
+      ${field("Acreage", p.acreage)}${field("Land value", money(p.land_value))}${field("Improvements", money(p.impr_value))}
+      ${field("Market value", money(p.market_value))}${field("Exemptions", esc(p.exemptions))}${field("Deed date", esc(p.deed_date))}
+      ${field("Delinquent years", p.years_delinquent ? `${p.years_delinquent} (${p.first_delinquent_year}–${p.last_delinquent_year})` : "none")}
+      ${field("Delinquent due", money(p.delinquent_due))}${field("Total due", money(p.total_due))}
+      ${field("Flood zone", p.flood_zone == null ? "unknown" : p.flood_zone ? "yes" : "no")}
+      ${field("Road access", p.road_access == null ? "unknown" : p.road_access ? "yes" : "no")}</dl>
+    <h3>Receivables</h3>
+    <table><thead><tr><th>Year</th><th>Unit</th><th class="num">Levy</th><th class="num">Due</th></tr></thead><tbody>
+    ${d.receivables.map(r => `<tr><td>${r.tax_year}</td><td>${esc(r.unit_name || r.unit_code)}</td>
+      <td class="num">${money(r.levy)}</td><td class="num">${money(r.total_due)}</td></tr>`).join("") || `<tr><td colspan="4" class="small">none</td></tr>`}
+    </tbody></table>`;
+  $("detail").classList.add("open");
+  $("close").onclick = () => $("detail").classList.remove("open");
+}
+async function init() {
+  const s = await (await fetch("/api/summary")).json();
+  const m = s.meta || {};
+  $("title").textContent = `${m.county || ""} County parcel finder`;
+  $("stats").innerHTML = [["parcels", s.parcels.toLocaleString()], ["delinquent", s.delinquent.toLocaleString()],
+    ["delinquent $", money(s.delinquent_due)], ["out-of-state", s.out_of_state.toLocaleString()],
+    ["estate/heirs", s.estate.toLocaleString()], ["vacant", s.vacant.toLocaleString()],
+    ["as of", esc(m.as_of)]].map(([l, v]) => `<span>${l} <b>${v}</b></span>`).join("");
+  if ((m.layout_notes || "").includes("DRAFT")) { $("warn").hidden = false; $("warn").textContent = m.layout_notes; }
+  const opts = (id, list) => $(id).insertAdjacentHTML("beforeend", list.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(""));
+  opts("state_code", s.state_codes.map(c => [c.state_code, `${c.state_code} (${c.n})`]));
+  opts("city", s.cities.map(c => [c, c])); opts("mail_state", s.mail_states.map(c => [c, c]));
+  const url = new URLSearchParams(location.search);
+  for (const id of INPUTS) if (url.has(id)) $(id).value = url.get(id);
+  for (const id of ["exclude_flood","require_road"]) $(id).checked = url.get(id) === "1";
+  if (url.has("sort")) state.sort = url.get("sort"); if (url.has("dir")) state.dir = url.get("dir");
+  load();
+}
+$("apply").onclick = () => { state.offset = 0; load(); };
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") { state.offset = 0; load(); } });
+$("reset").onclick = () => { INPUTS.forEach(id => $(id).value = ""); ["exclude_flood","require_road"].forEach(id => $(id).checked = false);
+  state = {sort: "score", dir: "desc", offset: 0}; load(); };
+$("csv").onclick = () => { location.href = "/api/parcels.csv?" + params(); };
+$("prev").onclick = () => { state.offset = Math.max(0, state.offset - PAGE); load(); };
+$("next").onclick = () => { state.offset += PAGE; load(); };
+$("head").onclick = e => { const k = e.target.dataset.k; if (!k || k === "tags") return;
+  const numeric = (COLS.find(c => c[0] === k) || [])[2];
+  state.dir = state.sort === k ? (state.dir === "desc" ? "asc" : "desc") : (numeric ? "desc" : "asc");
+  state.sort = k; state.offset = 0; load(); };
+$("rows").onclick = e => { const tr = e.target.closest("tr[data-a]"); if (tr) showDetail(tr.dataset.a); };
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+"""Motivated-seller signals and the parcel score (pure; no I/O).
+
+Four seller types, each read from the tax roll:
+
+1. Behind on taxes   - unpaid receivables for past tax years
+2. Out of state      - mailing state is not the parcel's state
+3. Estate / heirs    - owner name says ESTATE, HEIRS, ET AL, DECD, LIFE ESTATE
+4. Long idle         - no improvements / vacant-land code, held 10+ years,
+                       no homestead exemption (owner doesn't live there)
+
+Flood zone and road access come from optional GIS enrichment and only count
+when known.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import re
+from dataclasses import dataclass, field
+from typing import Dict, Iterable, Optional
+
+# Word-bounded so "ESTATES" (a subdivision) and "REAL ESTATE" (a company)
+# don't trip it; "EST OF" / "ESTATE OF" do.
+ESTATE_PATTERN = re.compile(
+    r"\bESTATE\b|\bEST OF\b|\bHEIRS?\b|\bET\s?AL\b|\bDEC'?D\b|\bDECEASED\b|\bLIFE\s+EST(ATE)?\b",
+    re.IGNORECASE,
+)
+_REAL_ESTATE = re.compile(r"\bREAL\s+ESTATE\b", re.IGNORECASE)
+
+VACANT_CODES = ("C1", "D1", "D2", "E")   # prefixes: C1 lots, D1/D2 ag land, E rural
+
+
+@dataclass(frozen=True)
+class Weights:
+    delinquent: int = 3
+    per_year_behind: int = 1
+    out_of_state: int = 2
+    estate: int = 2
+    long_held: int = 1
+    vacant: int = 1
+    absentee: int = 1          # no homestead exemption
+    flood_zone: int = -5
+    no_road_access: int = -5
+
+    def as_dict(self) -> Dict[str, int]:
+        return dict(self.__dict__)
+
+
+@dataclass
+class Signals:
+    delinquent: bool = False
+    years_behind: int = 0
+    out_of_state: bool = False
+    estate: bool = False
+    long_held: bool = False
+    vacant: bool = False
+    absentee: bool = False
+    flood_zone: Optional[bool] = None
+    road_access: Optional[bool] = None
+    reasons: list = field(default_factory=list)
+
+
+def is_estate(*names: Optional[str]) -> bool:
+    for name in names:
+        if name and ESTATE_PATTERN.search(_REAL_ESTATE.sub("", name)):
+            return True
+    return False
+
+
+def is_out_of_state(mail_state: Optional[str], home_state: str = "TX") -> bool:
+    """Blank state reads as unknown, not out of state."""
+    state = (mail_state or "").strip().upper()
+    return bool(state) and state != home_state.upper()
+
+
+def is_vacant(impr_value: Optional[float], state_code: Optional[str],
+              vacant_codes: Iterable[str] = VACANT_CODES) -> bool:
+    code = (state_code or "").strip().upper()
+    if impr_value is not None and impr_value <= 0:
+        return True
+    return bool(code) and any(code.startswith(c) for c in vacant_codes) and not impr_value
+
+
+def years_held(deed_date: Optional[str], as_of: dt.date) -> Optional[float]:
+    if not deed_date:
+        return None
+    try:
+        d = dt.date.fromisoformat(deed_date)
+    except ValueError:
+        return None
+    return (as_of - d).days / 365.25
+
+
+def compute_signals(parcel: Dict, *, as_of: dt.date, home_state: str = "TX",
+                    homestead: re.Pattern = re.compile(r"\bHS\b"),
+                    long_held_years: int = 10) -> Signals:
+    s = Signals()
+    s.years_behind = int(parcel.get("years_delinquent") or 0)
+    s.delinquent = s.years_behind > 0
+    s.out_of_state = is_out_of_state(parcel.get("mail_state"), home_state)
+    s.estate = is_estate(parcel.get("owner_name"), parcel.get("owner_name2"))
+    held = years_held(parcel.get("deed_date"), as_of)
+    s.long_held = held is not None and held >= long_held_years
+    s.vacant = is_vacant(parcel.get("impr_value"), parcel.get("state_code"))
+    s.absentee = not homestead.search(parcel.get("exemptions") or "")
+    fz, road = parcel.get("flood_zone"), parcel.get("road_access")
+    s.flood_zone = None if fz is None else bool(fz)
+    s.road_access = None if road is None else bool(road)
+    return s
+
+
+def score(s: Signals, w: Weights = Weights()) -> int:
+    total, reasons = 0, []
+
+    def add(points: int, why: str):
+        nonlocal total
+        total += points
+        reasons.append(f"{points:+d} {why}")
+
+    if s.delinquent:
+        add(w.delinquent, "tax-delinquent")
+        add(w.per_year_behind * s.years_behind, f"{s.years_behind} yr(s) behind")
+    if s.out_of_state:
+        add(w.out_of_state, "out-of-state owner")
+    if s.estate:
+        add(w.estate, "estate/heirs")
+    if s.long_held:
+        add(w.long_held, "owned 10+ yrs")
+    if s.vacant:
+        add(w.vacant, "vacant/no improvements")
+    if s.absentee:
+        add(w.absentee, "no homestead")
+    if s.flood_zone:
+        add(w.flood_zone, "flood zone")
+    if s.road_access is False:
+        add(w.no_road_access, "no road access")
+    s.reasons = reasons
+    return total
+
+
+def delinquent_through_year(as_of: dt.date) -> int:
+    """Latest tax year whose bill is past due on ``as_of``.
+
+    Texas bills for year Y are due Jan 31 of Y+1 and delinquent Feb 1.
+    """
+    return as_of.year - 1 if as_of >= dt.date(as_of.year, 2, 1) else as_of.year - 2

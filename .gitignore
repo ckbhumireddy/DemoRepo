@@ -21,3 +21,8 @@ tradestation_token.json
 # Personal holdings (portfolio_insights input) — never commit
 portfolio.json
 Portfolio_Positions*.csv
+
+# parcel_finder: local database, demo fixtures and county downloads — never commit
+parcels.db*
+demo_data/
+TaxRoll_*.zip

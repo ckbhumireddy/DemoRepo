@@ -481,3 +481,19 @@ research-only knobs (`enter_after`, `max_lev`, non-full `reset`) are
 refused, because the live trader cannot execute them. Promotion
 requires surviving the stress gate; raw-history winners that die under
 1.25x moves are not deployable artifacts.
+
+## Tax-Delinquent Parcel Finder (parcel_finder)
+
+Builds a local SQLite database of motivated-seller parcels from a county's
+public tax-roll download, scores each parcel, and serves a web page to browse
+and filter them and export a mailing list. It needs only the Python standard
+library. Denton County is the first county; see
+[`parcel_finder/README.md`](parcel_finder/README.md) for the full guide.
+
+```bash
+python -m parcel_finder demo                      # synthetic data, opens on :8765
+python -m parcel_finder inspect TaxRoll_V1_*.zip  # check the layout against real files
+python -m parcel_finder ingest TaxRoll_V1_*.zip && python -m parcel_finder build
+python -m parcel_finder serve                     # http://127.0.0.1:8765/
+python -m parcel_finder export mail.csv --top-pct 25
+```

@@ -1,0 +1,129 @@
+"""Filtered, sorted, paged reads of the ``parcels`` table for the web UI / CSV."""
+
+from __future__ import annotations
+
+import sqlite3
+from typing import Dict, List, Mapping, Tuple
+
+from .db import PARCEL_COLUMNS
+
+SORTABLE = {"score", "delinquent_due", "total_due", "years_delinquent", "market_value",
+            "land_value", "impr_value", "acreage", "owner_name", "account", "deed_date",
+            "mail_state", "situs_city", "situs_address", "state_code"}
+
+FLAG_FILTERS = {  # query param -> column
+    "delinquent": "is_delinquent", "out_of_state": "is_out_of_state", "estate": "is_estate",
+    "long_held": "is_long_held", "vacant": "is_vacant", "absentee": "is_absentee",
+    "in_suit": "in_suit",
+}
+
+
+def _num(params: Mapping[str, str], key: str):
+    v = (params.get(key) or "").strip()
+    if not v:
+        return None
+    try:
+        return float(v)
+    except ValueError:
+        return None
+
+
+def build_where(params: Mapping[str, str]) -> Tuple[str, List]:
+    clauses, args = [], []
+    for key, col in FLAG_FILTERS.items():
+        v = (params.get(key) or "").strip().lower()
+        if v in ("1", "true", "yes"):
+            clauses.append(f"{col} = 1")
+        elif v in ("0", "false", "no"):
+            clauses.append(f"COALESCE({col}, 0) = 0")
+    for key, col, op in (("min_score", "score", ">="), ("min_years", "years_delinquent", ">="),
+                         ("min_due", "delinquent_due", ">="), ("max_due", "delinquent_due", "<="),
+                         ("min_value", "market_value", ">="), ("max_value", "market_value", "<="),
+                         ("min_acres", "acreage", ">="), ("max_acres", "acreage", "<="),
+                         ("top_pct", "score_pct", ">=")):
+        n = _num(params, key)
+        if n is not None:
+            if key == "top_pct":           # "top 25%" -> score_pct >= 75
+                n = 100 - n
+            clauses.append(f"{col} {op} ?")
+            args.append(n)
+    if (params.get("exclude_flood") or "") in ("1", "true"):
+        clauses.append("COALESCE(flood_zone, 0) = 0")
+    if (params.get("require_road") or "") in ("1", "true"):
+        clauses.append("COALESCE(road_access, 1) = 1")
+    for key, col in (("mail_state", "mail_state"), ("state_code", "state_code"), ("city", "situs_city")):
+        v = (params.get(key) or "").strip().upper()
+        if v:
+            vals = [x.strip() for x in v.split(",") if x.strip()]
+            if col == "state_code":      # prefix match: "C1" hits C1, C1A...
+                clauses.append("(" + " OR ".join(f"UPPER({col}) LIKE ?" for _ in vals) + ")")
+                args += [x + "%" for x in vals]
+            else:
+                clauses.append(f"UPPER({col}) IN ({', '.join('?' * len(vals))})")
+                args += vals
+    q = (params.get("q") or "").strip()
+    if q:
+        like = f"%{q.upper()}%"
+        clauses.append("(UPPER(owner_name) LIKE ? OR UPPER(COALESCE(owner_name2,'')) LIKE ? "
+                       "OR UPPER(COALESCE(situs_address,'')) LIKE ? OR account LIKE ? "
+                       "OR UPPER(COALESCE(legal_desc,'')) LIKE ?)")
+        args += [like] * 5
+    return ("WHERE " + " AND ".join(clauses)) if clauses else "", args
+
+
+def order_by(params: Mapping[str, str]) -> str:
+    col = params.get("sort") or "score"
+    if col not in SORTABLE:
+        col = "score"
+    direction = "ASC" if (params.get("dir") or "").lower() == "asc" else "DESC"
+    return f"ORDER BY {col} {direction} NULLS LAST, delinquent_due DESC, account"
+
+
+def search(conn: sqlite3.Connection, params: Mapping[str, str], *, limit: int = 100,
+           offset: int = 0) -> Dict:
+    where, args = build_where(params)
+    total = conn.execute(f"SELECT COUNT(*) FROM parcels {where}", args).fetchone()[0]
+    rows = conn.execute(f"SELECT * FROM parcels {where} {order_by(params)} LIMIT ? OFFSET ?",
+                        args + [limit, offset]).fetchall()
+    return {"total": total, "rows": [dict(r) for r in rows]}
+
+
+def iter_all(conn: sqlite3.Connection, params: Mapping[str, str]):
+    where, args = build_where(params)
+    yield PARCEL_COLUMNS
+    for r in conn.execute(f"SELECT {', '.join(PARCEL_COLUMNS)} FROM parcels {where} {order_by(params)}", args):
+        yield list(r)
+
+
+def detail(conn: sqlite3.Connection, account: str) -> Dict:
+    p = conn.execute("SELECT * FROM parcels WHERE account = ?", (account,)).fetchone()
+    if p is None:
+        return {}
+    recv = conn.execute("""SELECT r.*, u.unit_name FROM receivables r
+                           LEFT JOIN tax_units u ON u.unit_code = r.unit_code
+                           WHERE r.account = ? ORDER BY r.tax_year DESC, r.unit_code""", (account,)).fetchall()
+    return {"parcel": dict(p), "receivables": [dict(r) for r in recv]}
+
+
+def summary(conn: sqlite3.Connection) -> Dict:
+    one = lambda sql: conn.execute(sql).fetchone()[0]
+    return {
+        "meta": {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM meta")},
+        "parcels": one("SELECT COUNT(*) FROM parcels"),
+        "delinquent": one("SELECT COUNT(*) FROM parcels WHERE is_delinquent = 1"),
+        "delinquent_due": one("SELECT ROUND(COALESCE(SUM(delinquent_due), 0), 2) FROM parcels"),
+        "out_of_state": one("SELECT COUNT(*) FROM parcels WHERE is_out_of_state = 1"),
+        "estate": one("SELECT COUNT(*) FROM parcels WHERE is_estate = 1"),
+        "vacant": one("SELECT COUNT(*) FROM parcels WHERE is_vacant = 1"),
+        "mail_states": [r[0] for r in conn.execute(
+            "SELECT mail_state FROM parcels WHERE COALESCE(mail_state,'') <> '' "
+            "GROUP BY mail_state ORDER BY COUNT(*) DESC")],
+        "cities": [r[0] for r in conn.execute(
+            "SELECT situs_city FROM parcels WHERE COALESCE(situs_city,'') <> '' "
+            "GROUP BY situs_city ORDER BY COUNT(*) DESC LIMIT 200")],
+        "state_codes": [dict(r) for r in conn.execute(
+            "SELECT state_code, COUNT(*) AS n FROM parcels WHERE COALESCE(state_code,'') <> '' "
+            "GROUP BY state_code ORDER BY n DESC LIMIT 60")],
+        "score_histogram": [dict(r) for r in conn.execute(
+            "SELECT score, COUNT(*) AS n FROM parcels GROUP BY score ORDER BY score")],
+    }
