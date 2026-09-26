@@ -42,6 +42,8 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--accent-soft); }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+button.star { border: 0; background: none; padding: 0 2px; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
+button.star.on { color: #d99a00; }
 .score { display: inline-block; min-width: 28px; text-align: center; border-radius: 10px; padding: 1px 6px; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
 .tags span { display: inline-block; font-size: 11px; padding: 0 5px; margin: 1px 2px 1px 0; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
 .tags span.hot { color: var(--bad); border-color: var(--bad); }
@@ -66,6 +68,8 @@ a:hover { text-decoration: underline; }
 
   <h3>Property type</h3>
   <select id="ptype"><option value="__real">Real property (land)</option><option value="">All accounts</option></select>
+
+  <label style="margin-top:10px"><input type="checkbox" id="favorites"> ★ Favorites only (<span id="favcount">0</span>)</label>
 
   <h3>Mail list</h3>
   <label><input type="checkbox" id="mailable" checked> Mailable owners only</label>
@@ -122,14 +126,16 @@ a:hover { text-decoration: underline; }
 const FLAGS = [["delinquent","Tax-delinquent"],["out_of_state","Out-of-state owner"],["estate","Estate / heirs"],
                ["long_held","Owned 10+ years"],["vacant","Vacant / no improvements"],["absentee","No homestead"],["in_suit","Tax suit filed"],
                ["judgment","Tax judgment"],["bankruptcy","In bankruptcy"],["deferral","Tax deferral (65+/disabled)"]];
-const COLS = [["score","Score",true],["account","Account"],["owner_name","Owner"],["situs_address","Situs"],
+const COLS = [["fav","★"],["score","Score",true],["account","Account"],["owner_name","Owner"],["situs_address","Situs"],
               ["mail_state","Mail st"],["state_code","Code"],["acreage","Acres",true],["market_value","Value",true],
               ["years_delinquent","Yrs",true],["delinquent_due","Delinq $",true],["tags","Signals"]];
 const PAGE = 100;
 let RTYPES = {};
 let state = {sort: "score", dir: "desc", offset: 0};
 const $ = id => document.getElementById(id);
-const money = v => v == null ? "" : "$" + Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+// Cents only when they matter: $1-value HOA lots owe pennies, which would round to "$0".
+const money = v => v == null ? "" : "$" + Number(v).toLocaleString(undefined,
+  Math.abs(v) > 0 && Math.abs(v) < 100 ? {minimumFractionDigits: 2, maximumFractionDigits: 2} : {maximumFractionDigits: 0});
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 $("flags").innerHTML = FLAGS.map(([k, l]) =>
@@ -141,11 +147,25 @@ const INPUTS = ["q","top_pct","min_score","min_years","min_due","min_value","max
 function params() {
   const p = new URLSearchParams();
   for (const id of INPUTS) { const v = $(id).value.trim(); if (v) p.set(id, v); }
-  for (const id of ["exclude_flood","require_road","mailable"]) if ($(id).checked) p.set(id, "1");
+  for (const id of ["exclude_flood","require_road","mailable","favorites"]) if ($(id).checked) p.set(id, "1");
   const pt = $("ptype").value;
   if (pt === "__real") p.set("real_property", "1"); else if (pt) p.set("roll", pt);
   p.set("sort", state.sort); p.set("dir", state.dir);
   return p;
+}
+function star(r) {
+  const on = !!r.is_favorite;
+  return `<button class="star${on ? " on" : ""}" data-fav="${esc(r.account)}" data-on="${on ? 1 : 0}"
+    title="${on ? "Remove from favorites" : "Add to favorites"}" aria-pressed="${on}">${on ? "★" : "☆"}</button>`;
+}
+async function saveFavorite(account, favorite, note) {
+  const body = {favorite}; if (note !== undefined) body.note = note;
+  const res = await fetch("/api/favorite/" + encodeURIComponent(account),
+    {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const d = await res.json();
+  if (!res.ok) { alert("Could not save favorite: " + (d.error || res.status)); return false; }
+  $("favcount").textContent = d.favorites;
+  return true;
 }
 function cadLink(r) {
   if (!r.cad_url) return `${esc(r.account)}${r.cad ? `<div class="small">${esc(r.cad)}</div>` : ""}`;
@@ -171,28 +191,28 @@ async function load() {
   const p = params(); p.set("limit", PAGE); p.set("offset", state.offset);
   history.replaceState(null, "", "?" + p.toString());
   const res = await fetch("/api/parcels?" + p); const d = await res.json();
-  if (d.error) { $("rows").innerHTML = `<tr><td colspan="11">${esc(d.error)}</td></tr>`; return; }
+  if (d.error) { $("rows").innerHTML = `<tr><td colspan="12">${esc(d.error)}</td></tr>`; return; }
   $("count").textContent = `${d.total.toLocaleString()} parcels match`;
   const pages = Math.max(1, Math.ceil(d.total / PAGE));
   $("page").textContent = `page ${Math.floor(state.offset / PAGE) + 1} / ${pages}`;
   $("prev").disabled = state.offset === 0; $("next").disabled = state.offset + PAGE >= d.total;
   document.querySelectorAll("th").forEach(th => th.classList.toggle("sorted", th.dataset.k === state.sort));
   $("rows").innerHTML = d.rows.map(r => `<tr data-a="${esc(r.account)}">
-    <td class="num"><span class="score">${r.score}</span></td><td>${cadLink(r)}</td>
+    <td>${star(r)}</td><td class="num"><span class="score">${r.score}</span></td><td>${cadLink(r)}</td>
     <td>${esc(r.owner_name)}${r.owner_name2 ? `<div class="small">${esc(r.owner_name2)}</div>` : ""}</td>
     <td>${esc(r.situs_address)}<div class="small">${esc(r.situs_city)}</div></td>
     <td>${esc(r.mail_state)}</td><td>${esc(r.state_code)}</td>
     <td class="num">${r.acreage == null ? "" : Number(r.acreage).toFixed(2)}</td>
     <td class="num">${money(r.market_value)}</td><td class="num">${r.years_delinquent || ""}</td>
     <td class="num">${r.delinquent_due ? money(r.delinquent_due) : ""}</td><td>${tags(r)}</td></tr>`).join("")
-    || `<tr><td colspan="11" class="small">No parcels match these filters.</td></tr>`;
+    || `<tr><td colspan="12" class="small">No parcels match these filters.</td></tr>`;
 }
 async function showDetail(acct) {
   const d = await (await fetch("/api/parcel/" + encodeURIComponent(acct))).json();
   const p = d.parcel; if (!p) return;
   const field = (l, v) => v == null || v === "" ? "" : `<dt>${l}</dt><dd>${v}</dd>`;
   $("detail").innerHTML = `<button id="close" style="float:right">Close</button>
-    <h2 style="margin:0 0 4px">${esc(p.owner_name)}</h2><div class="small">Account ${esc(p.account)}${p.cad_id ? " · Geo ID " + esc(p.cad_id) : ""}
+    <h2 style="margin:0 0 4px"><span id="dstar">${star(p)}</span> ${esc(p.owner_name)}</h2><div class="small">Account ${esc(p.account)}${p.cad_id ? " · Geo ID " + esc(p.cad_id) : ""}
       · ${p.cad_url ? `<a href="${esc(p.cad_url)}" target="_blank" rel="noopener">View on ${esc(p.cad)} ↗</a>` : esc(p.cad || "")}</div>
     <p><span class="score">${p.score}</span> <span class="small">${p.score_pct} percentile · ${esc(p.reasons)}</span></p>
     <dl>${field("Owner 2", esc(p.owner_name2))}
@@ -207,6 +227,10 @@ async function showDetail(acct) {
       ${field("Collection status", [p.in_suit && "tax suit filed", p.in_judgment && "judgment", p.in_bankruptcy && "bankruptcy", p.in_deferral && "deferral"].filter(Boolean).join(", ") || "none")}
       ${field("Flood zone", p.flood_zone == null ? "unknown" : p.flood_zone ? "yes" : "no")}
       ${field("Road access", p.road_access == null ? "unknown" : p.road_access ? "yes" : "no")}</dl>
+    <h3>Notes</h3>
+    <textarea id="fav_note" rows="3" style="width:100%;font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)"
+      placeholder="Called owner, drove by, sent letter… (saving a note also favorites the parcel)">${esc(p.fav_note || "")}</textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><button id="save_note">Save note</button><span class="small" id="note_status"></span></div>
     <h3>Receivables</h3>
     <table><thead><tr><th>Year</th><th>Unit</th><th>Type</th><th class="num">Levy</th><th class="num">Due</th></tr></thead><tbody>
     ${d.receivables.map(r => `<tr><td>${r.tax_year}</td><td>${esc(r.unit_name || r.unit_code)}</td>
@@ -214,7 +238,17 @@ async function showDetail(acct) {
       <td class="num">${money(r.levy)}</td><td class="num">${money(r.total_due)}</td></tr>`).join("") || `<tr><td colspan="5" class="small">none</td></tr>`}
     </tbody></table>`;
   $("detail").classList.add("open");
-  $("close").onclick = () => $("detail").classList.remove("open");
+  $("close").onclick = () => { $("detail").classList.remove("open"); load(); };
+  $("dstar").onclick = async e => {
+    const b = e.target.closest("button.star"); if (!b) return;
+    const on = b.dataset.on !== "1";
+    if (await saveFavorite(p.account, on)) { p.is_favorite = on; $("dstar").innerHTML = star(p); }
+  };
+  $("save_note").onclick = async () => {
+    if (await saveFavorite(p.account, true, $("fav_note").value)) {
+      p.is_favorite = true; $("dstar").innerHTML = star(p); $("note_status").textContent = "Saved";
+    }
+  };
 }
 async function init() {
   const s = await (await fetch("/api/summary")).json();
@@ -228,11 +262,12 @@ async function init() {
   if ((m.layout_notes || "").includes("DRAFT")) { $("warn").hidden = false; $("warn").textContent = m.layout_notes; }
   const opts = (id, list) => $(id).insertAdjacentHTML("beforeend", list.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join(""));
   opts("state_code", s.state_codes.map(c => [c.state_code, `${c.state_code} (${c.n})`]));
+  $("favcount").textContent = s.favorites || 0;
   opts("ptype", s.rolls.map(r => [r.roll, `${r.roll} (${r.n.toLocaleString()})`]));
   opts("city", s.cities.map(c => [c, c])); opts("mail_state", s.mail_states.map(c => [c, c]));
   const url = new URLSearchParams(location.search);
   for (const id of INPUTS) if (url.has(id)) $(id).value = url.get(id);
-  for (const id of ["exclude_flood","require_road"]) $(id).checked = url.get(id) === "1";
+  for (const id of ["exclude_flood","require_road","favorites"]) $(id).checked = url.get(id) === "1";
   if (url.toString()) {
     $("mailable").checked = url.get("mailable") === "1";
     $("ptype").value = url.get("real_property") === "1" ? "__real" : (url.get("roll") || "");
@@ -242,17 +277,29 @@ async function init() {
 }
 $("apply").onclick = () => { state.offset = 0; load(); };
 $("q").addEventListener("keydown", e => { if (e.key === "Enter") { state.offset = 0; load(); } });
-$("reset").onclick = () => { INPUTS.forEach(id => $(id).value = ""); ["exclude_flood","require_road"].forEach(id => $(id).checked = false);
+$("reset").onclick = () => { INPUTS.forEach(id => $(id).value = ""); ["exclude_flood","require_road","favorites"].forEach(id => $(id).checked = false);
   $("mailable").checked = true; $("ptype").value = "__real";
   state = {sort: "score", dir: "desc", offset: 0}; load(); };
 $("csv").onclick = () => { location.href = "/api/parcels.csv?" + params(); };
 $("prev").onclick = () => { state.offset = Math.max(0, state.offset - PAGE); load(); };
 $("next").onclick = () => { state.offset += PAGE; load(); };
-$("head").onclick = e => { const k = e.target.dataset.k; if (!k || k === "tags") return;
+$("head").onclick = e => { const k = e.target.dataset.k; if (!k || k === "tags" || k === "fav") return;
   const numeric = (COLS.find(c => c[0] === k) || [])[2];
   state.dir = state.sort === k ? (state.dir === "desc" ? "asc" : "desc") : (numeric ? "desc" : "asc");
   state.sort = k; state.offset = 0; load(); };
-$("rows").onclick = e => { if (e.target.closest("a")) return; const tr = e.target.closest("tr[data-a]"); if (tr) showDetail(tr.dataset.a); };
+$("favorites").onchange = () => { state.offset = 0; load(); };
+$("rows").onclick = async e => {
+  const b = e.target.closest("button.star");
+  if (b) {
+    const on = b.dataset.on !== "1";
+    if (await saveFavorite(b.dataset.fav, on)) {
+      b.dataset.on = on ? 1 : 0; b.classList.toggle("on", on); b.textContent = on ? "★" : "☆";
+      b.title = on ? "Remove from favorites" : "Add to favorites"; b.setAttribute("aria-pressed", on);
+      if (!on && $("favorites").checked) load();
+    }
+    return;
+  }
+  if (e.target.closest("a")) return; const tr = e.target.closest("tr[data-a]"); if (tr) showDetail(tr.dataset.a); };
 init();
 </script>
 </body>

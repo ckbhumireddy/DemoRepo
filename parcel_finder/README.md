@@ -84,8 +84,11 @@ data (see `_inferred` in the layout):
 * **Denton CAD link**: the tax-office account is the CAD property ID plus a
   district suffix, so `963342DEN` becomes
   `https://www.dentoncad.com/property-detail/963342`. Parcels that straddle
-  the county line carry another district's suffix (`TAR` Tarrant, `WIS` Wise,
-  `COK` Cooke, ...). The page shows that district's name instead of a link.
+  the county line carry another district's suffix. `TAR` links to Tarrant CAD
+  (`https://tarrant.prodigycad.com/property-detail/<id>`). For the others (`WIS`
+  Wise, `COK` Cooke, ...) the page shows the district's name. Both ID mappings
+  were checked against the CADs' own data. About 10% of delinquent accounts are
+  retired or split parcels that the CAD no longer lists.
 * **Deed date** is populated on about a quarter of accounts, so "owned 10+ years" only
   fires where it is known.
 
@@ -93,6 +96,16 @@ Adding another county means writing a new `layouts/<county>.json` (fixed or
 delimited files, plus a `canonical` map to the app's field names) and passing
 `--layout <county>`. `inspect <zip>` prints the first record parsed with a
 layout, so a wrong position is easy to spot.
+
+## Favorites
+
+Click ☆ on any row, or in the detail panel, to star a parcel. The detail panel
+also has a notes box ("mailed letter 9/26 ..."). Saving a note stars the parcel.
+Use "Favorites only" to see your list. `export mail.csv --favorites` writes it
+out, with `is_favorite` and `fav_note` columns in every export.
+
+Favorites live in the `favorites` table of `parcels.db`. Re-running `ingest`
+or `build` keeps them, but deleting `parcels.db` removes them.
 
 ## Flood zone and road access (optional)
 

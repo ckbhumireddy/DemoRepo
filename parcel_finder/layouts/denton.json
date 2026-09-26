@@ -536,7 +536,8 @@
    "url": "https://www.dentoncad.com/property-detail/{id}"
   },
   "TAR": {
-   "name": "Tarrant CAD"
+   "name": "Tarrant CAD",
+   "url": "https://tarrant.prodigycad.com/property-detail/{id}"
   },
   "WIS": {
    "name": "Wise CAD"

@@ -5,6 +5,7 @@ GET /api/summary         counts + filter option lists
 GET /api/parcels?...     filtered page of parcels (see queries.build_where)
 GET /api/parcel/<acct>   one parcel with its receivable rows
 GET /api/parcels.csv?... every matching parcel as CSV (mail-list export)
+POST /api/favorite/<acct> {"favorite": true|false, "note": "..."}
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qsl, unquote, urlparse
 
-from . import queries
+from . import db, queries
 
 log = logging.getLogger(__name__)
 STATIC = pathlib.Path(__file__).resolve().parent / "static"
@@ -27,7 +28,8 @@ STATIC = pathlib.Path(__file__).resolve().parent / "static"
 
 def make_handler(db_path: str):
     # A proper file: URI so Windows paths (drive letters, spaces, "#") open read-only.
-    db_uri = pathlib.Path(db_path).resolve().as_uri() + "?mode=ro"
+    db_file = str(pathlib.Path(db_path).resolve())
+    db_uri = pathlib.Path(db_file).as_uri() + "?mode=ro"     # reads; favorites write via db_file
 
     class Handler(BaseHTTPRequestHandler):
         def _conn(self):
@@ -79,6 +81,29 @@ def make_handler(db_path: str):
                 log.exception("request failed: %s", self.path)
                 self._json({"error": str(exc)}, 400)
 
+        def do_POST(self):  # noqa: N802
+            url = urlparse(self.path)
+            if not url.path.startswith("/api/favorite/"):
+                return self._json({"error": "not found"}, 404)
+            # JSON only: a cross-site form can't send it without a CORS
+            # preflight, which this server never approves.
+            if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+                return self._json({"error": "expected application/json"}, 415)
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+                account = unquote(url.path[len("/api/favorite/"):])
+                note = body.get("note")
+                with closing(sqlite3.connect(db_file)) as c:
+                    if not c.execute("SELECT 1 FROM parcels WHERE account = ?", (account,)).fetchone():
+                        return self._json({"error": "unknown account"}, 404)
+                    db.set_favorite(c, account, bool(body.get("favorite", True)),
+                                    note.strip() if isinstance(note, str) else None)
+                    count = c.execute("SELECT COUNT(*) FROM favorites").fetchone()[0]
+                self._json({"account": account, "favorite": bool(body.get("favorite", True)), "favorites": count})
+            except (ValueError, sqlite3.Error) as exc:
+                log.exception("request failed: %s", self.path)
+                self._json({"error": str(exc)}, 400)
+
         def log_message(self, fmt, *args):
             log.debug("%s - %s", self.address_string(), fmt % args)
 
@@ -88,6 +113,8 @@ def make_handler(db_path: str):
 def serve(db_path: str, host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False):
     if not pathlib.Path(db_path).exists():
         raise SystemExit(f"database not found: {db_path} (run ingest + build first, or --demo)")
+    with closing(sqlite3.connect(db_path)) as c:      # databases built before favorites existed
+        db.ensure_favorites(c)
     server = ThreadingHTTPServer((host, port), make_handler(str(pathlib.Path(db_path).resolve())))
     url = f"http://{host}:{port}/"
     print(f"Browse parcels at {url}  (keep this window open; Ctrl+C to stop)")

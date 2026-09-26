@@ -285,6 +285,7 @@ def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] 
                 "delinquent_due", "roll_code"):
         conn.execute(f"CREATE INDEX IF NOT EXISTS ix_parcels_{col} ON parcels({col})")
 
+    ensure_favorites(conn)
     conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)")
     meta = {"county": layout.county, "state": layout.state, "as_of": as_of.isoformat(),
             "delinquent_through_year": str(through), "built_at": dt.datetime.now().isoformat(timespec="seconds"),
@@ -315,6 +316,25 @@ def _rank(rows: List[Dict]) -> None:
             for r in group[i:j]:
                 r["score_pct"] = round(100.0 * j / n, 1)
             i = j
+
+
+# ------------------------------------------------------------------ favorites
+# Kept in their own table: ingest/build replace the data tables, never this one.
+
+def ensure_favorites(conn: sqlite3.Connection) -> None:
+    conn.execute("CREATE TABLE IF NOT EXISTS favorites (account TEXT PRIMARY KEY, note TEXT, created_at TEXT)")
+    conn.commit()
+
+
+def set_favorite(conn: sqlite3.Connection, account: str, favorite: bool, note: Optional[str] = None) -> None:
+    ensure_favorites(conn)
+    if favorite:
+        conn.execute("""INSERT INTO favorites VALUES (?, ?, ?)
+                        ON CONFLICT(account) DO UPDATE SET note = COALESCE(excluded.note, note)""",
+                     (account, note, dt.datetime.now().isoformat(timespec="seconds")))
+    else:
+        conn.execute("DELETE FROM favorites WHERE account = ?", (account,))
+    conn.commit()
 
 
 # ----------------------------------------------------------------- enrichment

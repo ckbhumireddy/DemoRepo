@@ -63,6 +63,7 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--top-pct", type=float, help="keep only the top N%% by score, e.g. 25")
     s.add_argument("--min-score", type=float)
     s.add_argument("--delinquent", action="store_true")
+    s.add_argument("--favorites", action="store_true", help="only parcels you starred on the page")
     s.add_argument("--all-types", action="store_true",
                    help="include minerals / business personal property (default: real property only)")
     s.add_argument("--include-unmailable", action="store_true",
@@ -138,8 +139,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.cmd == "enrich":
         print(f"Merged {db.load_enrichment(conn, args.csv):,} enrichment rows; now re-run `build`.")
     elif args.cmd == "export":
+        db.ensure_favorites(conn)
         params = {"top_pct": args.top_pct, "min_score": args.min_score,
                   "delinquent": "1" if args.delinquent else None,
+                  "favorites": "1" if args.favorites else None,
                   "real_property": None if args.all_types else "1",
                   "mailable": None if args.include_unmailable else "1"}
         params = {k: str(v) for k, v in params.items() if v is not None}

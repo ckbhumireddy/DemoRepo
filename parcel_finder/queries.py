@@ -7,6 +7,10 @@ from typing import Dict, List, Mapping, Tuple
 
 from .db import PARCEL_COLUMNS
 
+# Parcels with their favorite flag/note. USING keeps "account" unambiguous.
+FROM = "FROM parcels LEFT JOIN favorites f USING (account)"
+FAV_COLS = "f.account IS NOT NULL AS is_favorite, f.note AS fav_note"
+
 SORTABLE = {"score", "delinquent_due", "total_due", "years_delinquent", "market_value",
             "land_value", "impr_value", "acreage", "owner_name", "account", "deed_date",
             "mail_state", "situs_city", "situs_address", "state_code"}
@@ -55,6 +59,8 @@ def build_where(params: Mapping[str, str]) -> Tuple[str, List]:
         clauses.append("TRIM(COALESCE(mail_addr1, '')) <> '' AND UPPER(COALESCE(owner_name, '')) NOT IN (%s)"
                        % ", ".join("?" * len(UNMAILABLE_OWNERS)))
         args += list(UNMAILABLE_OWNERS)
+    if (params.get("favorites") or "") in ("1", "true"):
+        clauses.append("f.account IS NOT NULL")
     if (params.get("exclude_flood") or "") in ("1", "true"):
         clauses.append("COALESCE(flood_zone, 0) = 0")
     if (params.get("require_road") or "") in ("1", "true"):
@@ -91,21 +97,22 @@ def order_by(params: Mapping[str, str]) -> str:
 def search(conn: sqlite3.Connection, params: Mapping[str, str], *, limit: int = 100,
            offset: int = 0) -> Dict:
     where, args = build_where(params)
-    total = conn.execute(f"SELECT COUNT(*) FROM parcels {where}", args).fetchone()[0]
-    rows = conn.execute(f"SELECT * FROM parcels {where} {order_by(params)} LIMIT ? OFFSET ?",
+    total = conn.execute(f"SELECT COUNT(*) {FROM} {where}", args).fetchone()[0]
+    rows = conn.execute(f"SELECT parcels.*, {FAV_COLS} {FROM} {where} {order_by(params)} LIMIT ? OFFSET ?",
                         args + [limit, offset]).fetchall()
     return {"total": total, "rows": [dict(r) for r in rows]}
 
 
 def iter_all(conn: sqlite3.Connection, params: Mapping[str, str]):
     where, args = build_where(params)
-    yield PARCEL_COLUMNS
-    for r in conn.execute(f"SELECT {', '.join(PARCEL_COLUMNS)} FROM parcels {where} {order_by(params)}", args):
+    yield PARCEL_COLUMNS + ["is_favorite", "fav_note"]
+    for r in conn.execute(f"SELECT {', '.join(PARCEL_COLUMNS)}, {FAV_COLS} {FROM} {where} {order_by(params)}",
+                          args):
         yield list(r)
 
 
 def detail(conn: sqlite3.Connection, account: str) -> Dict:
-    p = conn.execute("SELECT * FROM parcels WHERE account = ?", (account,)).fetchone()
+    p = conn.execute(f"SELECT parcels.*, {FAV_COLS} {FROM} WHERE account = ?", (account,)).fetchone()
     if p is None:
         return {}
     recv = conn.execute("""SELECT r.*, u.unit_name FROM receivables r
@@ -128,6 +135,7 @@ def summary(conn: sqlite3.Connection) -> Dict:
         "estate": real(where="is_estate = 1"),
         "vacant": real(where="is_vacant = 1"),
         "all_accounts": conn.execute("SELECT COUNT(*) FROM parcels").fetchone()[0],
+        "favorites": conn.execute("SELECT COUNT(*) FROM favorites").fetchone()[0],
         "rolls": [dict(r) for r in conn.execute(
             "SELECT roll, COUNT(*) AS n, MAX(is_real_property) AS real FROM parcels "
             "GROUP BY roll ORDER BY real DESC, n DESC")],

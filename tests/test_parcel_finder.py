@@ -241,6 +241,66 @@ def test_mailable_filter_drops_withheld_owners(built):
 
 def test_cad_link_from_account_suffix(layout):
     assert db.cad_link("963342DEN", layout) == ("Denton CAD", "https://www.dentoncad.com/property-detail/963342")
+    assert db.cad_link("40355667TAR", layout) == ("Tarrant CAD",
+                                                  "https://tarrant.prodigycad.com/property-detail/40355667")
     assert db.cad_link("771087WIS", layout) == ("Wise CAD", None)
     assert db.cad_link("800310200A03", layout) == (None, None)
     assert db.cad_link(None, layout) == (None, None)
+
+
+def test_favorites_survive_rebuild_and_filter(tmp_path, layout):
+    z = sample.generate(layout, tmp_path / "f.zip", n=60, seed=4, as_of=AS_OF)
+    conn = db.connect(tmp_path / "f.db")
+    db.ingest(conn, layout, [z])
+    db.build(conn, layout, as_of=AS_OF)
+    a, b = [r[0] for r in conn.execute("SELECT account FROM parcels LIMIT 2")]
+    db.set_favorite(conn, a, True, "called owner")
+    db.set_favorite(conn, b, True)
+    db.set_favorite(conn, b, False)
+    db.set_favorite(conn, a, True)                 # re-starring keeps the note
+    db.ingest(conn, layout, [z])
+    db.build(conn, layout, as_of=AS_OF)
+    rows = queries.search(conn, {"favorites": "1"}, limit=10)["rows"]
+    assert [(r["account"], r["is_favorite"], r["fav_note"]) for r in rows] == [(a, 1, "called owner")]
+    assert queries.detail(conn, b)["parcel"]["is_favorite"] == 0
+    header, *body = list(queries.iter_all(conn, {"favorites": "1"}))
+    assert header[-2:] == ["is_favorite", "fav_note"] and body[0][-1] == "called owner"
+    assert queries.summary(conn)["favorites"] == 1
+
+
+def test_web_favorite_endpoint(tmp_path, layout):
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from parcel_finder.web import make_handler
+    z = sample.generate(layout, tmp_path / "w.zip", n=30, seed=5, as_of=AS_OF)
+    path = tmp_path / "w.db"
+    conn = db.connect(path)
+    db.ingest(conn, layout, [z])
+    db.build(conn, layout, as_of=AS_OF)
+    acct = conn.execute("SELECT account FROM parcels LIMIT 1").fetchone()[0]
+    conn.close()
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(str(path)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_port}"
+
+    def post(account, body, ctype="application/json"):
+        req = urllib.request.Request(f"{base}/api/favorite/{account}", json.dumps(body).encode(),
+                                     {"Content-Type": ctype}, method="POST")
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, json.load(e)
+
+    try:
+        assert post(acct, {"favorite": True, "note": " hot lead "}) == (200, {"account": acct, "favorite": True,
+                                                                             "favorites": 1})
+        with urllib.request.urlopen(f"{base}/api/parcels?favorites=1") as r:
+            rows = json.load(r)["rows"]
+        assert [(x["account"], x["fav_note"]) for x in rows] == [(acct, "hot lead")]
+        assert post("NOPE", {"favorite": True})[0] == 404
+        assert post(acct, {"favorite": False}, ctype="text/plain")[0] == 415
+        assert post(acct, {"favorite": False})[1]["favorites"] == 0
+    finally:
+        srv.shutdown()
