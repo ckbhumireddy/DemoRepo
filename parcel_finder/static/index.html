@@ -47,6 +47,7 @@ button.star.on { color: #d99a00; }
 .score { display: inline-block; min-width: 28px; text-align: center; border-radius: 10px; padding: 1px 6px; font-weight: 600; background: var(--accent-soft); color: var(--accent); }
 .tags span { display: inline-block; font-size: 11px; padding: 0 5px; margin: 1px 2px 1px 0; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
 .tags span.hot { color: var(--bad); border-color: var(--bad); }
+.tags span.fit { color: var(--good); border-color: var(--good); }
 .small { font-size: 12px; color: var(--muted); }
 #detail { position: fixed; top: 0; right: 0; width: min(560px, 100%); height: 100%; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -6px 0 18px rgba(0,0,0,.15); padding: 18px; overflow-y: auto; transform: translateX(105%); transition: transform .18s; }
 #detail.open { transform: none; }
@@ -123,7 +124,7 @@ button.star.on { color: #d99a00; }
 <div id="detail"></div>
 
 <script>
-const FLAGS = [["delinquent","Tax-delinquent"],["out_of_state","Out-of-state owner"],["estate","Estate / heirs"],
+const FLAGS = [["target_acreage","Target acreage"],["under_price","Under price cap"],["delinquent","Tax-delinquent"],["out_of_state","Out-of-state owner"],["estate","Estate / heirs"],
                ["long_held","Owned 10+ years"],["vacant","Vacant / no improvements"],["absentee","No homestead"],["in_suit","Tax suit filed"],
                ["judgment","Tax judgment"],["bankruptcy","In bankruptcy"],["deferral","Tax deferral (65+/disabled)"]];
 const COLS = [["fav","★"],["score","Score",true],["account","Account"],["owner_name","Owner"],["situs_address","Situs"],
@@ -173,6 +174,8 @@ function cadLink(r) {
 }
 function tags(r) {
   const t = [];
+  if (r.is_target_acreage) t.push(`<span class="fit">acreage fit</span>`);
+  if (r.is_under_price) t.push(`<span class="fit">under cap</span>`);
   if (r.is_delinquent) t.push(`<span class="hot">delinq ${r.years_delinquent}y</span>`);
   if (r.in_suit) t.push(`<span class="hot">suit</span>`);
   if (r.in_judgment) t.push(`<span class="hot">judgment</span>`);
@@ -254,6 +257,13 @@ async function init() {
   const s = await (await fetch("/api/summary")).json();
   const m = s.meta || {};
   try { RTYPES = JSON.parse(m.receivable_types || "{}"); } catch (e) {}
+  try {
+    const t = JSON.parse(m.targets || "{}");
+    if (t.max_value) {
+      $("flags").querySelector("#target_acreage").previousElementSibling.textContent = `Acreage ${t.min_acres}–${t.max_acres} ac`;
+      $("flags").querySelector("#under_price").previousElementSibling.textContent = `Value under ${money(t.max_value)}`;
+    }
+  } catch (e) {}
   $("title").textContent = `${m.county || ""} County parcel finder`;
   $("stats").innerHTML = [["real-property parcels", s.parcels.toLocaleString()], ["delinquent", s.delinquent.toLocaleString()],
     ["delinquent $", money(s.delinquent_due)], ["out-of-state", s.out_of_state.toLocaleString()],

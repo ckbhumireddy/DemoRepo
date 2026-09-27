@@ -26,7 +26,7 @@ from typing import List, Optional
 
 from . import db, queries, sample
 from .layout import load_layout
-from .scoring import Weights
+from .scoring import Targets, Weights
 
 DEFAULT_DB = "parcels.db"
 
@@ -51,6 +51,13 @@ def _parser() -> argparse.ArgumentParser:
     s = sub.add_parser("build", help="roll up delinquency, apply enrichment, score every parcel")
     s.add_argument("--as-of", type=dt.date.fromisoformat, help="YYYY-MM-DD (default today)")
     s.add_argument("--long-held-years", type=int, default=10)
+    t = Targets()
+    s.add_argument("--min-acres", type=float, default=t.min_acres, help=f"target acreage band (default {t.min_acres})")
+    s.add_argument("--max-acres", type=float, default=t.max_acres, help=f"(default {t.max_acres})")
+    s.add_argument("--max-value", type=float, default=t.max_value,
+                   help=f"price cap; lower value scores higher (default {t.max_value:,.0f})")
+    s.add_argument("--min-value", type=float, default=t.min_value,
+                   help=f"values below this earn no price points: HOA/ROW slivers (default {t.min_value:,.0f})")
     for name, default in Weights().as_dict().items():  # --w-out-of-state 3, --w-deferral 0, ...
         s.add_argument(f"--w-{name.replace('_', '-')}", type=int, default=default, dest=f"w_{name}",
                        help=f"score weight (default {default:+d})")
@@ -108,7 +115,10 @@ def cmd_inspect(layout, paths, lines: int):
 
 def cmd_build(conn, layout, args):
     w = Weights(**{k: getattr(args, f"w_{k}") for k in Weights().as_dict()})
-    n = db.build(conn, layout, as_of=args.as_of, weights=w, long_held_years=args.long_held_years)
+    targets = Targets(min_acres=args.min_acres, max_acres=args.max_acres,
+                      max_value=args.max_value, min_value=args.min_value)
+    n = db.build(conn, layout, as_of=args.as_of, weights=w, long_held_years=args.long_held_years,
+                 targets=targets)
     s = queries.summary(conn)
     print(f"Built {n:,} accounts; real property: {s['parcels']:,} parcels, {s['delinquent']:,} delinquent "
           f"(${s['delinquent_due']:,.0f}), {s['out_of_state']:,} out-of-state, {s['estate']:,} estate/heirs, "
@@ -157,6 +167,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         z = sample.generate(layout, "demo_data/TaxRoll_DEMO.zip", n=args.n)
         db.ingest(conn, layout, [z])
         args.as_of, args.long_held_years = dt.date(2026, 9, 22), 10
+        t = Targets()
+        args.min_acres, args.max_acres, args.max_value, args.min_value = t.min_acres, t.max_acres, t.max_value, t.min_value
         for k, v in Weights().as_dict().items():
             setattr(args, f"w_{k}", v)
         cmd_build(conn, layout, args)

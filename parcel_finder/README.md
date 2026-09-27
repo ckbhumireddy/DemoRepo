@@ -5,7 +5,9 @@ parcels that are likely to sell below market. It targets four seller types:
 
 | Signal | How it is read from the roll | Default points |
 |---|---|---|
-| Behind on taxes | unpaid receivables whose delinquency date has passed | **+3**, plus **+1 per year** behind |
+| Target acreage | 0.5–5 acres | **+3** |
+| Low price | appraised value under $500k; lower is better: +4 under $125k, +3 under $250k, +2 under $375k, +1 under $500k. Values under $5k (HOA common areas, road slivers) get nothing | **+1 to +4** |
+| Behind on taxes | unpaid receivables whose delinquency date has passed | **+3**, plus **+1 per year** behind, first 5 years only |
 | Out-of-state owner | mailing state is not `TX` | **+2** |
 | Estate / heirs | owner name matches `ESTATE`, `EST OF`, `HEIRS`, `ET AL`, `DECD`, `DECEASED`, `LIFE ESTATE` (but not `ESTATES` or `REAL ESTATE`) | **+2** |
 | Owned 10+ years | deed date is 10+ years ago | **+1** |
@@ -17,6 +19,11 @@ parcels that are likely to sell below market. It targets four seller types:
 | Flood zone / no road access | from a GIS enrichment CSV | **−5** each |
 
 Every weight can be changed at build time, e.g. `build --w-out-of-state 3 --w-absentee 0`.
+The targets are flags too: `build --min-acres 1 --max-acres 10 --max-value 300000`.
+`--w-max-years-scored 0` removes the 5-year cap. The cap is there because,
+without it, 20-year-delinquent $1 slivers crowd target-fit parcels out of the
+top of the list. On the Sept 2026 roll, 32 of the top 50 fit both targets with
+the cap, and 9 without it.
 Each parcel also gets a percentile rank, so "mail the top 25%" is a single filter.
 
 ## Run it

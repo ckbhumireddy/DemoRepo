@@ -24,7 +24,7 @@ import zipfile
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 from .layout import FileSpec, Layout
-from .scoring import VACANT_CODES, Weights, compute_signals, delinquent_through_year, score
+from .scoring import VACANT_CODES, Targets, Weights, compute_signals, delinquent_through_year, score
 
 log = logging.getLogger(__name__)
 BATCH = 5000
@@ -37,7 +37,8 @@ PARCEL_COLUMNS = [
     "years_delinquent", "first_delinquent_year", "last_delinquent_year",
     "delinquent_due", "total_due", "in_suit", "in_judgment", "in_bankruptcy", "in_deferral",
     "flood_zone", "road_access",
-    "is_real_property", "is_delinquent", "is_out_of_state", "is_estate", "is_long_held", "is_vacant",
+    "is_real_property", "is_target_acreage", "is_under_price",
+    "is_delinquent", "is_out_of_state", "is_estate", "is_long_held", "is_vacant",
     "is_absentee", "score", "score_pct", "reasons",
 ]
 
@@ -218,7 +219,7 @@ def cad_link(account: Optional[str], layout: Layout) -> Tuple[Optional[str], Opt
 
 
 def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] = None,
-          weights: Weights = Weights(), long_held_years: int = 10) -> int:
+          weights: Weights = Weights(), long_held_years: int = 10, targets: Targets = Targets()) -> int:
     as_of = as_of or dt.date.today()
     through = delinquent_through_year(as_of)
 
@@ -269,10 +270,11 @@ def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] 
         p["flood_zone"], p["road_access"] = e.get("flood_zone"), e.get("road_access")
 
         s = compute_signals(p, as_of=as_of, home_state=layout.state, homestead=homestead,
-                            long_held_years=long_held_years, vacant_codes=vacant_codes)
+                            long_held_years=long_held_years, vacant_codes=vacant_codes, targets=targets)
         p["score"] = score(s, weights)
         p["reasons"] = "; ".join(s.reasons)
-        p.update(is_delinquent=int(s.delinquent), is_out_of_state=int(s.out_of_state),
+        p.update(is_target_acreage=int(s.target_acreage), is_under_price=int(s.under_price),
+                 is_delinquent=int(s.delinquent), is_out_of_state=int(s.out_of_state),
                  is_estate=int(s.estate), is_long_held=int(s.long_held),
                  is_vacant=int(s.vacant), is_absentee=int(s.absentee))
         rows.append(p)
@@ -290,6 +292,7 @@ def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] 
     meta = {"county": layout.county, "state": layout.state, "as_of": as_of.isoformat(),
             "delinquent_through_year": str(through), "built_at": dt.datetime.now().isoformat(timespec="seconds"),
             "layout_notes": layout.notes, "weights": repr(weights.as_dict()),
+            "targets": json.dumps(targets.__dict__),
             "receivable_types": json.dumps(layout.extras.get("receivable_types") or {})}
     conn.executemany("INSERT OR REPLACE INTO meta VALUES (?, ?)", meta.items())
     conn.commit()

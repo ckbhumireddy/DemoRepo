@@ -304,3 +304,33 @@ def test_web_favorite_endpoint(tmp_path, layout):
         assert post(acct, {"favorite": False})[1]["favorites"] == 0
     finally:
         srv.shutdown()
+
+
+@pytest.mark.parametrize("value, points", [
+    (4_999, 0), (5_000, 4), (124_999, 4), (125_000, 3), (249_999, 3), (250_000, 2),
+    (374_999, 2), (375_000, 1), (499_999, 1), (500_000, 0), (None, 0), (0, 0),
+])
+def test_lower_price_scores_higher(value, points):
+    s = compute_signals({"market_value": value, "exemptions": "HS"}, as_of=AS_OF)
+    assert score(s, Weights()) == points
+
+
+@pytest.mark.parametrize("acres, fits", [(0.49, False), (0.5, True), (2.2, True), (5.0, True), (5.01, False),
+                                         (None, False), (0, False)])
+def test_target_acreage_band(acres, fits):
+    s = compute_signals({"acreage": acres, "exemptions": "HS"}, as_of=AS_OF)
+    assert s.target_acreage is fits and score(s, Weights()) == (3 if fits else 0)
+
+
+def test_targets_are_configurable():
+    from parcel_finder.scoring import Targets
+    t = Targets(min_acres=5, max_acres=20, max_value=200_000)
+    s = compute_signals({"acreage": 10, "market_value": 150_000, "exemptions": "HS"}, as_of=AS_OF, targets=t)
+    assert s.target_acreage and score(s, Weights()) == 3 + 1
+
+
+def test_years_behind_points_are_capped():
+    s = Signals(delinquent=True, years_behind=22)
+    assert score(s, Weights(absentee=0)) == 3 + 5
+    assert "+5 22 yr(s) behind" in s.reasons
+    assert score(s, Weights(absentee=0, max_years_scored=0)) == 3 + 22

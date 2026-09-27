@@ -19,7 +19,7 @@ FLAG_FILTERS = {  # query param -> column
     "delinquent": "is_delinquent", "out_of_state": "is_out_of_state", "estate": "is_estate",
     "long_held": "is_long_held", "vacant": "is_vacant", "absentee": "is_absentee",
     "in_suit": "in_suit", "judgment": "in_judgment", "bankruptcy": "in_bankruptcy", "deferral": "in_deferral",
-    "real_property": "is_real_property",
+    "real_property": "is_real_property", "target_acreage": "is_target_acreage", "under_price": "is_under_price",
 }
 
 # Owners a letter can't reach: no mailing address, or a withheld/unknown name.

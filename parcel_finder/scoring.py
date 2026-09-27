@@ -18,6 +18,7 @@ when known.
 from __future__ import annotations
 
 import datetime as dt
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Optional
@@ -34,9 +35,23 @@ VACANT_CODES = ("C1", "D1", "D2", "E")   # Texas PTAD prefixes; a layout can sup
 
 
 @dataclass(frozen=True)
+class Targets:
+    """The parcels you want to buy: acreage band and price ceiling."""
+    min_acres: float = 0.5
+    max_acres: float = 5.0
+    max_value: float = 500_000
+    min_value: float = 5_000     # below this the "price" is an HOA common area or ROW sliver
+
+
+@dataclass(frozen=True)
 class Weights:
     delinquent: int = 3
     per_year_behind: int = 1
+    # Only the first N years behind earn points (0 = no cap). Uncapped, a
+    # 20-year-delinquent $1 sliver outranks a 2-acre lot that fits the targets.
+    max_years_scored: int = 5
+    target_acreage: int = 3    # acreage inside Targets band
+    under_price: int = 4       # most points for the cheapest parcel under the cap (graded)
     out_of_state: int = 2
     estate: int = 2
     long_held: int = 1
@@ -57,6 +72,9 @@ class Weights:
 class Signals:
     delinquent: bool = False
     years_behind: int = 0
+    target_acreage: bool = False
+    under_price: bool = False
+    price_fraction: float = 0.0  # value / cap, for parcels under it
     out_of_state: bool = False
     estate: bool = False
     long_held: bool = False
@@ -112,10 +130,16 @@ def years_held(deed_date: Optional[str], as_of: dt.date) -> Optional[float]:
 def compute_signals(parcel: Dict, *, as_of: dt.date, home_state: str = "TX",
                     homestead: re.Pattern = re.compile(r"\bHS\b"),
                     long_held_years: int = 10,
-                    vacant_codes: Iterable[str] = VACANT_CODES) -> Signals:
+                    vacant_codes: Iterable[str] = VACANT_CODES,
+                    targets: Targets = Targets()) -> Signals:
     s = Signals()
     s.years_behind = int(parcel.get("years_delinquent") or 0)
     s.delinquent = s.years_behind > 0
+    acres, value = parcel.get("acreage"), parcel.get("market_value")
+    s.target_acreage = acres is not None and targets.min_acres <= acres <= targets.max_acres
+    # 0 means the roll carries no value, not a free parcel.
+    s.under_price = value is not None and targets.min_value <= value < targets.max_value
+    s.price_fraction = value / targets.max_value if s.under_price else 0.0
     s.out_of_state = is_out_of_state(parcel.get("mail_state"), home_state)
     s.estate = is_estate(parcel.get("owner_name"), parcel.get("owner_name2"))
     held = years_held(parcel.get("deed_date"), as_of)
@@ -143,7 +167,15 @@ def score(s: Signals, w: Weights = Weights()) -> int:
 
     if s.delinquent:
         add(w.delinquent, "tax-delinquent")
-        add(w.per_year_behind * s.years_behind, f"{s.years_behind} yr(s) behind")
+        years = min(s.years_behind, w.max_years_scored) if w.max_years_scored else s.years_behind
+        add(w.per_year_behind * years, f"{s.years_behind} yr(s) behind")
+    if s.target_acreage:
+        add(w.target_acreage, "target acreage")
+    if s.under_price:
+        # Lower price, more points: with weight 4 and a $500k cap that is
+        # +4 under $125k, +3 under $250k, +2 under $375k, +1 under $500k.
+        pts = max(1, math.ceil(w.under_price * (1 - s.price_fraction)))
+        add(pts, "low price" if pts >= w.under_price else "under price cap")
     if s.out_of_state:
         add(w.out_of_state, "out-of-state owner")
     if s.estate:
