@@ -533,11 +533,13 @@
  "appraisal_districts": {
   "DEN": {
    "name": "Denton CAD",
-   "url": "https://www.dentoncad.com/property-detail/{id}"
+   "url": "https://www.dentoncad.com/property-detail/{id}",
+   "api_office": "Denton"
   },
   "TAR": {
    "name": "Tarrant CAD",
-   "url": "https://tarrant.prodigycad.com/property-detail/{id}"
+   "url": "https://tarrant.prodigycad.com/property-detail/{id}",
+   "api_office": "Tarrant"
   },
   "WIS": {
    "name": "Wise CAD"

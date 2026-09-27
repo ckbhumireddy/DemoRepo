@@ -23,6 +23,7 @@ import sqlite3
 import zipfile
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
+from . import geo
 from .layout import FileSpec, Layout
 from .scoring import VACANT_CODES, Targets, Weights, compute_signals, delinquent_through_year, score
 
@@ -36,7 +37,7 @@ PARCEL_COLUMNS = [
     "acreage", "land_value", "impr_value", "market_value", "exemptions", "deed_date", "year_built",
     "years_delinquent", "first_delinquent_year", "last_delinquent_year",
     "delinquent_due", "total_due", "in_suit", "in_judgment", "in_bankruptcy", "in_deferral",
-    "flood_zone", "road_access",
+    "latitude", "longitude", "fema_zone", "flood_zone", "flood_partial", "road_access",
     "is_real_property", "is_target_acreage", "is_under_price",
     "is_delinquent", "is_out_of_state", "is_estate", "is_long_held", "is_vacant",
     "is_absentee", "score", "score_pct", "reasons",
@@ -237,6 +238,9 @@ def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] 
     conn.execute("CREATE TABLE IF NOT EXISTS enrichment (account TEXT PRIMARY KEY, flood_zone INTEGER, "
                  "road_access INTEGER, source TEXT)")
     enrich = {r["account"]: dict(r) for r in conn.execute("SELECT * FROM enrichment")}
+    geo.ensure_tables(conn)
+    located = {r["account"]: dict(r) for r in conn.execute("SELECT * FROM locations WHERE latitude IS NOT NULL")}
+    floods = {r["account"]: dict(r) for r in conn.execute("SELECT * FROM flood")}
 
     conn.execute("DROP TABLE IF EXISTS parcels")
     conn.execute(f"CREATE TABLE parcels ({', '.join(PARCEL_COLUMNS)}, PRIMARY KEY (account))")
@@ -268,6 +272,12 @@ def build(conn: sqlite3.Connection, layout: Layout, *, as_of: Optional[dt.date] 
         p["last_delinquent_year"] = d.get("last_delinquent_year")
         e = enrich.get(p["account"], {})
         p["flood_zone"], p["road_access"] = e.get("flood_zone"), e.get("road_access")
+        loc = located.get(p["account"], {})
+        p["latitude"], p["longitude"] = loc.get("latitude"), loc.get("longitude")
+        f = floods.get(p["account"])
+        if f:   # FEMA lookup wins over a hand-made enrichment CSV
+            p["flood_zone"], p["flood_partial"] = f["in_sfha"], f["near_sfha"]
+            p["fema_zone"] = geo.fema_zone_label(f["fld_zone"], f["zone_subty"])
 
         s = compute_signals(p, as_of=as_of, home_state=layout.state, homestead=homestead,
                             long_held_years=long_held_years, vacant_codes=vacant_codes, targets=targets)

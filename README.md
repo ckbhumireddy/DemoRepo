@@ -494,6 +494,7 @@ library. Denton County is the first county; see
 python -m parcel_finder demo                      # synthetic data, opens on :8765
 python -m parcel_finder inspect TaxRoll_V1_*.zip  # see what's in a download
 python -m parcel_finder ingest TaxRoll_V1_*.zip && python -m parcel_finder build
+python -m parcel_finder flood && python -m parcel_finder build   # FEMA flood zones
 python -m parcel_finder serve                     # http://127.0.0.1:8765/
 python -m parcel_finder export mail.csv --top-pct 25
 ```

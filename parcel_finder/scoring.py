@@ -61,7 +61,8 @@ class Weights:
     judgment: int = 1          # judgment entered: sale is next
     bankruptcy: int = -3       # automatic stay
     deferral: int = -3         # over-65 / disabled deferral: can't be foreclosed
-    flood_zone: int = -5
+    flood_zone: int = -5       # parcel center in a FEMA Special Flood Hazard Area
+    flood_partial: int = -2    # SFHA covers part of the parcel, not its center
     no_road_access: int = -5
 
     def as_dict(self) -> Dict[str, int]:
@@ -85,6 +86,7 @@ class Signals:
     bankruptcy: bool = False
     deferral: bool = False
     flood_zone: Optional[bool] = None
+    flood_partial: bool = False
     road_access: Optional[bool] = None
     reasons: list = field(default_factory=list)
 
@@ -153,6 +155,7 @@ def compute_signals(parcel: Dict, *, as_of: dt.date, home_state: str = "TX",
     s.deferral = bool(parcel.get("in_deferral"))
     fz, road = parcel.get("flood_zone"), parcel.get("road_access")
     s.flood_zone = None if fz is None else bool(fz)
+    s.flood_partial = bool(parcel.get("flood_partial"))
     s.road_access = None if road is None else bool(road)
     return s
 
@@ -196,6 +199,8 @@ def score(s: Signals, w: Weights = Weights()) -> int:
         add(w.deferral, "tax deferral")
     if s.flood_zone:
         add(w.flood_zone, "flood zone")
+    elif s.flood_partial:
+        add(w.flood_partial, "partly in flood zone")
     if s.road_access is False:
         add(w.no_road_access, "no road access")
     s.reasons = reasons

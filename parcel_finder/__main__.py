@@ -62,6 +62,11 @@ def _parser() -> argparse.ArgumentParser:
         s.add_argument(f"--w-{name.replace('_', '-')}", type=int, default=default, dest=f"w_{name}",
                        help=f"score weight (default {default:+d})")
 
+    s = sub.add_parser("flood", help="look up FEMA flood zones (CAD coordinates + FEMA NFHL); then re-run build")
+    s.add_argument("--all-types", action="store_true", help="also minerals / personal property (default: real property)")
+    s.add_argument("--refresh", action="store_true", help="look everything up again instead of only new parcels")
+    s.add_argument("--workers", type=int, default=6, help="parallel FEMA requests (default 6)")
+
     s = sub.add_parser("enrich", help="merge a CSV of account,flood_zone,road_access (then re-run build)")
     s.add_argument("csv")
 
@@ -146,6 +151,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("WARNING: no master (MM/AM) file found; build needs one.", file=sys.stderr)
     elif args.cmd == "build":
         cmd_build(conn, layout, args)
+    elif args.cmd == "flood":
+        from . import geo
+        where = "1" if args.all_types else "is_real_property = 1"
+        located = geo.locate(conn, layout, where=where, refresh=args.refresh)
+        print("Located (lat/lon from the appraisal districts):",
+              ", ".join(f"{k} {v:,}" for k, v in located.items()) or "nothing new")
+
+        def progress(done, total):
+            print(f"\rFEMA flood zones: {done:,}/{total:,}", end="", flush=True)
+        n = geo.flood(conn, where=where, refresh=args.refresh, workers=args.workers, progress=progress)
+        print() if n else print("FEMA flood zones: nothing new to look up")
+        s = conn.execute(f"""SELECT COUNT(*), SUM(f.in_sfha), SUM(f.near_sfha) FROM flood f
+                             JOIN parcels p USING (account) WHERE {where}""").fetchone()
+        print(f"{s[0]:,} parcels checked: {s[1] or 0:,} in a FEMA flood zone, {s[2] or 0:,} partly. "
+              "Now run `build` to score them.")
     elif args.cmd == "enrich":
         print(f"Merged {db.load_enrichment(conn, args.csv):,} enrichment rows; now re-run `build`.")
     elif args.cmd == "export":

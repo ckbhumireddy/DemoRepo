@@ -16,7 +16,9 @@ parcels that are likely to sell below market. It targets four seller types:
 | Tax suit filed / judgment | suit or judgment date on a receivable: the county is already heading to a sale | **+1** each |
 | Bankruptcy | bankruptcy date on an unpaid receivable (automatic stay) | **−3** |
 | Tax deferral | 65+/disabled deferral: the county can't foreclose | **−3** |
-| Flood zone / no road access | from a GIS enrichment CSV | **−5** each |
+| FEMA flood zone | parcel center in a FEMA Special Flood Hazard Area (A, AE, floodway …); run `flood` | **−5** |
+| Partly in flood zone | a flood zone touches the parcel but not its center | **−2** |
+| No road access | from a GIS enrichment CSV | **−5** |
 
 Every weight can be changed at build time, e.g. `build --w-out-of-state 3 --w-absentee 0`.
 The targets are flags too: `build --min-acres 1 --max-acres 10 --max-value 300000`.
@@ -114,17 +116,41 @@ out, with `is_favorite` and `fav_note` columns in every export.
 Favorites live in the `favorites` table of `parcels.db`. Re-running `ingest`
 or `build` keeps them, but deleting `parcels.db` removes them.
 
-## Flood zone and road access (optional)
-
-Build a CSV with columns `account,flood_zone,road_access` (values 1, 0, or blank
-for unknown) from a GIS join. Use TxGIO StratMap parcels, FEMA NFHL flood
-zones, and TxDOT or county roads. Then:
+## FEMA flood zones
 
 ```bash
-python -m parcel_finder enrich gis.csv && python -m parcel_finder build
+python -m parcel_finder flood      # ~8 min the first time; later runs only look up new parcels
+python -m parcel_finder build
 ```
 
-An unknown value never costs a parcel points.
+1. **Location.** The tax roll has no coordinates. Denton CAD and Tarrant CAD
+   return each property's latitude/longitude through their public property
+   search. The lookup tries this year's roll, then the previous two.
+   About 90% of real-property accounts are found; the rest are retired or
+   split parcels, and parcels in Wise, Cooke and other districts aren't looked
+   up. Those stay "not checked" and never lose points.
+2. **Flood zone.** FEMA's National Flood Hazard Layer
+   (`hazards.fema.gov`, layer 28) is queried with a circle the size of the
+   parcel, so a 3-acre lot whose back half is floodplain is still caught.
+   Center in a Special Flood Hazard Area means "in flood zone" (−5). Only part
+   of the circle means "partly" (−2). Zone X "0.2% annual chance" (the
+   500-year zone) is shown but not penalized.
+
+On the Sept 2026 roll: 5,264 parcels checked, 239 in a flood zone, 197
+partly, including 70 that otherwise fit the acreage/price targets.
+
+On the page, flooded parcels get a red "flood AE" or "part flood" tag.
+There are filters for both, plus an "Exclude FEMA flood zone" checkbox. The
+detail panel links to Google Maps and FEMA's official flood map for the spot.
+The location is a single point, so check the FEMA map before relying on it
+for a specific lot.
+
+Results are cached in the `locations` and `flood` tables of `parcels.db`.
+`flood --refresh` looks everything up again, e.g. after FEMA publishes new
+maps.
+
+**Road access** isn't automated yet. A CSV of `account,road_access` (1/0)
+can be merged with `enrich roads.csv`, then run `build`.
 
 ## Files
 
@@ -137,5 +163,6 @@ parcel_finder/
   queries.py           filters / sort / paging shared by web + export
   web.py               stdlib HTTP server + JSON API
   static/index.html    the browser page
+  geo.py               CAD coordinates + FEMA flood-zone lookups
   sample.py            synthetic county download for the demo and tests
 ```

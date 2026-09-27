@@ -334,3 +334,92 @@ def test_years_behind_points_are_capped():
     assert score(s, Weights(absentee=0)) == 3 + 5
     assert "+5 22 yr(s) behind" in s.reasons
     assert score(s, Weights(absentee=0, max_years_scored=0)) == 3 + 22
+
+
+# ------------------------------------------------------------- flood / geo
+
+from parcel_finder import geo  # noqa: E402
+
+
+def test_parcel_radius():
+    assert geo.parcel_radius_m(None) == 10.0
+    assert 35 < geo.parcel_radius_m(1.0) < 36          # 1 acre ~ circle of r=35.9 m
+    assert geo.parcel_radius_m(500) == geo.MAX_RADIUS_M
+
+
+@pytest.mark.parametrize("center, around, expected", [
+    ([{"FLD_ZONE": "AE", "SFHA_TF": "T"}], [{"FLD_ZONE": "AE", "SFHA_TF": "T"}, {"FLD_ZONE": "X", "SFHA_TF": "F"}],
+     ("AE", 1, 0)),
+    ([{"FLD_ZONE": "X", "SFHA_TF": "F"}], [{"FLD_ZONE": "X", "SFHA_TF": "F"}, {"FLD_ZONE": "A", "SFHA_TF": "T"}],
+     ("X", 0, 1)),
+    ([{"FLD_ZONE": "X", "SFHA_TF": "F"}], [{"FLD_ZONE": "X", "SFHA_TF": "F"}], ("X", 0, 0)),
+    ([], [], (None, 0, 0)),
+])
+def test_classify_flood(center, around, expected):
+    c = geo.classify(center, around)
+    assert (c["fld_zone"], c["in_sfha"], c["near_sfha"]) == expected
+
+
+def test_fema_zone_label():
+    assert geo.fema_zone_label("AE", "FLOODWAY") == "AE (floodway)"
+    assert geo.fema_zone_label("X", "0.2 PCT ANNUAL CHANCE FLOOD HAZARD") == "X (0.2% annual chance)"
+    assert geo.fema_zone_label("A", None) == "A" and geo.fema_zone_label(None, None) is None
+
+
+def test_locate_and_flood_feed_the_score(tmp_path, layout):
+    import copy
+    import urllib.parse
+    # Demo accounts are bare digits: treat them as one CAD with a True Prodigy office.
+    lay = copy.deepcopy(layout)
+    lay.extras["cad_account_pattern"] = r"^(?P<id>\d+)(?P<cad>)$"
+    lay.extras["appraisal_districts"] = {"": {"name": "Demo CAD", "api_office": "Demo",
+                                              "url": "https://demo.example/property-detail/{id}"}}
+    z = sample.generate(lay, tmp_path / "g.zip", n=40, seed=6, as_of=AS_OF)
+    conn = db.connect(tmp_path / "g.db")
+    db.ingest(conn, lay, [z])
+    db.build(conn, lay, as_of=AS_OF)
+    accts = sorted(r[0] for r in conn.execute("SELECT account FROM parcels"))
+    missing, wet, edge = accts[0], accts[1], accts[2]
+    coords = {a: (33.0 + i / 1000, -97.0) for i, a in enumerate(accts)}
+
+    def fake_post(url, data, headers):
+        assert headers.get("Origin") == "https://demo.example"
+        if url.endswith("/auth/token"):
+            return {"user": {"token": "t"}}
+        if data["pYear"]["value"] != str(AS_OF.year - 1):      # found only in the prior tax year
+            return {"results": []}
+        return {"results": [{"pid": p, "latitude": str(coords[str(p)][0]), "longitude": str(coords[str(p)][1])}
+                            for p in data["pid"]["value"] if str(p) != missing]}
+
+    assert geo.locate(conn, lay, where="1", as_of=AS_OF, post=fake_post) == {"Demo": len(accts) - 1}
+    assert geo.locate(conn, lay, where="1", as_of=AS_OF, post=fake_post) == {}      # cached
+
+    lat_of = {v[0]: a for a, v in coords.items()}
+    X = {"FLD_ZONE": "X", "ZONE_SUBTY": "AREA OF MINIMAL FLOOD HAZARD", "SFHA_TF": "F"}
+    AE = {"FLD_ZONE": "AE", "ZONE_SUBTY": "FLOODWAY", "SFHA_TF": "T"}
+
+    def fake_get(url):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        acct = lat_of[float(q["geometry"][0].split(",")[1])]
+        around = "distance" in q
+        if acct == wet:
+            zones = [AE]
+        elif acct == edge:
+            zones = [X, AE] if around else [X]              # zone touches the lot, not its center
+        else:
+            zones = [X]
+        return {"features": [{"attributes": z} for z in zones]}
+
+    assert geo.flood(conn, where="1", workers=2, get=fake_get) == len(accts) - 1
+    assert geo.flood(conn, where="1", workers=2, get=fake_get) == 0                  # cached
+
+    db.build(conn, lay, as_of=AS_OF)
+    row = lambda a: conn.execute("SELECT * FROM parcels WHERE account = ?", (a,)).fetchone()
+    assert (row(wet)["flood_zone"], row(wet)["fema_zone"]) == (1, "AE (floodway)")
+    assert "-5 flood zone" in row(wet)["reasons"]
+    assert (row(edge)["flood_zone"], row(edge)["flood_partial"]) == (0, 1)
+    assert "-2 partly in flood zone" in row(edge)["reasons"]
+    assert row(missing)["flood_zone"] is None and row(missing)["latitude"] is None
+    assert row(accts[3])["latitude"] is not None and row(accts[3])["fema_zone"] == "X"
+    kept = {r["account"] for r in queries.search(conn, {"exclude_flood": "1"}, limit=100)["rows"]}
+    assert wet not in kept and edge not in kept and missing in kept

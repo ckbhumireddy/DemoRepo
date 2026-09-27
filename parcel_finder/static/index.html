@@ -101,7 +101,7 @@ button.star.on { color: #d99a00; }
   <select id="mail_state"><option value="">Any</option></select>
 
   <h3>Location risk</h3>
-  <label><input type="checkbox" id="exclude_flood"> Exclude flood zone</label>
+  <label><input type="checkbox" id="exclude_flood"> Exclude FEMA flood zone (in or partly)</label>
   <label><input type="checkbox" id="require_road"> Exclude no road access</label>
 
   <div class="btns">
@@ -126,7 +126,8 @@ button.star.on { color: #d99a00; }
 <script>
 const FLAGS = [["target_acreage","Target acreage"],["under_price","Under price cap"],["delinquent","Tax-delinquent"],["out_of_state","Out-of-state owner"],["estate","Estate / heirs"],
                ["long_held","Owned 10+ years"],["vacant","Vacant / no improvements"],["absentee","No homestead"],["in_suit","Tax suit filed"],
-               ["judgment","Tax judgment"],["bankruptcy","In bankruptcy"],["deferral","Tax deferral (65+/disabled)"]];
+               ["judgment","Tax judgment"],["bankruptcy","In bankruptcy"],["deferral","Tax deferral (65+/disabled)"],
+               ["flood","In FEMA flood zone"],["flood_partial","Partly in flood zone"]];
 const COLS = [["fav","★"],["score","Score",true],["account","Account"],["owner_name","Owner"],["situs_address","Situs"],
               ["mail_state","Mail st"],["state_code","Code"],["acreage","Acres",true],["market_value","Value",true],
               ["years_delinquent","Yrs",true],["delinquent_due","Delinq $",true],["tags","Signals"]];
@@ -186,7 +187,8 @@ function tags(r) {
   if (r.is_long_held) t.push(`<span>10+ yrs</span>`);
   if (r.is_vacant) t.push(`<span>vacant</span>`);
   if (r.is_absentee) t.push(`<span>no HS</span>`);
-  if (r.flood_zone) t.push(`<span class="hot">flood</span>`);
+  if (r.flood_zone) t.push(`<span class="hot" title="FEMA Special Flood Hazard Area">flood ${esc(r.fema_zone || "")}</span>`);
+  else if (r.flood_partial) t.push(`<span class="hot" title="A FEMA flood zone covers part of the parcel">part flood</span>`);
   if (r.road_access === 0) t.push(`<span class="hot">no road</span>`);
   return `<div class="tags">${t.join("")}</div>`;
 }
@@ -228,7 +230,11 @@ async function showDetail(acct) {
       ${field("Delinquent years", p.years_delinquent ? `${p.years_delinquent} (${p.first_delinquent_year}–${p.last_delinquent_year})` : "none")}
       ${field("Delinquent due", money(p.delinquent_due))}${field("Total due", money(p.total_due))}
       ${field("Collection status", [p.in_suit && "tax suit filed", p.in_judgment && "judgment", p.in_bankruptcy && "bankruptcy", p.in_deferral && "deferral"].filter(Boolean).join(", ") || "none")}
-      ${field("Flood zone", p.flood_zone == null ? "unknown" : p.flood_zone ? "yes" : "no")}
+      ${field("FEMA flood zone", p.flood_zone == null ? "not checked (run <code>flood</code>)" :
+          esc(p.fema_zone || "") + (p.flood_zone ? " · in flood zone" : p.flood_partial ? " · partly in flood zone" : " · outside"))}
+      ${field("Map", p.latitude == null ? "" :
+          `<a href="https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}" target="_blank" rel="noopener">Google Maps ↗</a> ·
+           <a href="https://msc.fema.gov/portal/search?AddressQuery=${p.latitude}%2C${p.longitude}" target="_blank" rel="noopener">FEMA flood map ↗</a>`)}
       ${field("Road access", p.road_access == null ? "unknown" : p.road_access ? "yes" : "no")}</dl>
     <h3>Notes</h3>
     <textarea id="fav_note" rows="3" style="width:100%;font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)"

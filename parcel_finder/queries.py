@@ -19,6 +19,7 @@ FLAG_FILTERS = {  # query param -> column
     "delinquent": "is_delinquent", "out_of_state": "is_out_of_state", "estate": "is_estate",
     "long_held": "is_long_held", "vacant": "is_vacant", "absentee": "is_absentee",
     "in_suit": "in_suit", "judgment": "in_judgment", "bankruptcy": "in_bankruptcy", "deferral": "in_deferral",
+    "flood": "flood_zone", "flood_partial": "flood_partial",
     "real_property": "is_real_property", "target_acreage": "is_target_acreage", "under_price": "is_under_price",
 }
 
@@ -62,7 +63,7 @@ def build_where(params: Mapping[str, str]) -> Tuple[str, List]:
     if (params.get("favorites") or "") in ("1", "true"):
         clauses.append("f.account IS NOT NULL")
     if (params.get("exclude_flood") or "") in ("1", "true"):
-        clauses.append("COALESCE(flood_zone, 0) = 0")
+        clauses.append("COALESCE(flood_zone, 0) = 0 AND COALESCE(flood_partial, 0) = 0")
     if (params.get("require_road") or "") in ("1", "true"):
         clauses.append("COALESCE(road_access, 1) = 1")
     for key, col in (("mail_state", "mail_state"), ("state_code", "state_code"), ("city", "situs_city"),
