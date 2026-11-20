@@ -1,8 +1,8 @@
 name: Ticket Monitor
 
 # Watches Carlsbad Caverns tickets on recreation.gov. When tickets open up it
-# opens a GitHub issue (GitHub emails repo watchers) and marks the run failed
-# (GitHub also emails the workflow owner about failed runs).
+# emails via the repo's SMTP secrets, opens a GitHub issue, and marks the run
+# failed (GitHub's own failure email is a fallback).
 # NOTE: scheduled workflows only run from the default branch.
 
 on:
@@ -50,6 +50,21 @@ jobs:
           else
             echo "Issue already open; not duplicating."
           fi
+
+      - name: Send alert email
+        if: steps.check.outcome == 'failure' && startsWith(steps.check.outputs.summary, 'TICKETS AVAILABLE')
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          # Recipient: repo variable TICKET_EMAIL_TO if set, else the shared EMAIL_TO secret.
+          EMAIL_TO: ${{ vars.TICKET_EMAIL_TO || secrets.EMAIL_TO }}
+          SUMMARY: ${{ steps.check.outputs.summary }}
+        run: python3 ticket_monitor/send_email.py
 
       - name: Fail run to trigger email
         if: steps.check.outcome == 'failure' && startsWith(steps.check.outputs.summary, 'TICKETS AVAILABLE')
