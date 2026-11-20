@@ -15,6 +15,9 @@ LINK = f"https://www.recreation.gov/ticket/{FACILITY}/ticket/{TOUR}"
 
 
 def main() -> int:
+    if os.environ.get("SIMULATE_ERROR") == "true":
+        print("request failed: simulated error", file=sys.stderr)
+        return 1
     year, month = DATE.split("-")[:2]
     url = (
         f"https://www.recreation.gov/api/ticket/availability/facility/{FACILITY}/"
