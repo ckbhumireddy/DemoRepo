@@ -1,0 +1,58 @@
+name: Ticket Monitor
+
+# Watches Carlsbad Caverns tickets on recreation.gov. When tickets open up it
+# opens a GitHub issue (GitHub emails repo watchers) and marks the run failed
+# (GitHub also emails the workflow owner about failed runs).
+# NOTE: scheduled workflows only run from the default branch.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # GitHub's minimum is every 5 minutes; runs may be delayed
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "Date to watch (YYYY-MM-DD)"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ticket-monitor
+  cancel-in-progress: false
+
+env:
+  TARGET_DATE: ${{ inputs.target_date || '2026-11-27' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check availability
+        id: check
+        continue-on-error: true
+        run: python3 ticket_monitor/check.py
+
+      - name: Open issue if tickets are available
+        if: steps.check.outputs.summary != '' && startsWith(steps.check.outputs.summary, 'TICKETS AVAILABLE')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.check.outputs.summary }}
+        run: |
+          title="Tickets available for ${TARGET_DATE}"
+          existing=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq 'length')
+          if [ "$existing" = "0" ]; then
+            gh issue create --title "$title" --body "$SUMMARY"
+          else
+            echo "Issue already open; not duplicating."
+          fi
+
+      - name: Fail run to trigger email
+        if: steps.check.outcome == 'failure' && startsWith(steps.check.outputs.summary, 'TICKETS AVAILABLE')
+        run: |
+          echo "${{ steps.check.outputs.summary }}"
+          exit 1
