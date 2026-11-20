@@ -13,6 +13,13 @@ on:
       target_date:
         description: "Date to watch (YYYY-MM-DD)"
         required: false
+      simulate_error:
+        description: "Test: pretend the recreation.gov request failed"
+        type: boolean
+        default: false
+      fail_threshold:
+        description: "Consecutive failures before emailing (default 6)"
+        required: false
 
 permissions:
   contents: read
@@ -35,7 +42,27 @@ jobs:
       - name: Check availability
         id: check
         continue-on-error: true
+        env:
+          SIMULATE_ERROR: ${{ inputs.simulate_error }}
         run: python3 ticket_monitor/check.py
+
+      # A request error leaves `summary` empty. Count consecutive errors in an
+      # issue and email once when the threshold is reached; close it on recovery.
+      - name: Track request failures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IS_ERROR: ${{ steps.check.outputs.summary == '' }}
+          FAIL_THRESHOLD: ${{ inputs.fail_threshold || '6' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_USE_TLS: ${{ secrets.SMTP_USE_TLS }}
+          SMTP_USE_SSL: ${{ secrets.SMTP_USE_SSL }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          EMAIL_TO: ${{ vars.TICKET_EMAIL_TO || secrets.EMAIL_TO }}
+        run: bash ticket_monitor/track_failures.sh
 
       - name: Open issue if tickets are available
         if: steps.check.outputs.summary != '' && startsWith(steps.check.outputs.summary, 'TICKETS AVAILABLE')
